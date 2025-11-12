@@ -10,6 +10,12 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --color-magenta: #741B3F;
+  --color-dark-grey: #222222;
+  --color-cream: #F7DCAD;
+  --color-pink: #D47199;
+  --color-pink-light: #C87F9C;
+  --bottom-nav-height: 107px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -19,8 +25,22 @@
   }
 }
 
+/* Height fallback for older browsers */
+@supports (min-height: 100svh) {
+  .min-h-screen-safe {
+    min-height: 100svh;
+  }
+}
+
+/* Touch optimizations */
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Scoped overscroll to main content area only */
+.main-scroll-area {
+  overscroll-behavior: none;
 }
