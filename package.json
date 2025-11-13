@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "fetch:photo": "node scripts/fetch-restaurant-photo.mjs",
+    "backfill:photos": "node scripts/backfill-restaurant-photos.mjs",
+    "list:restaurants": "node scripts/list-restaurants.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.81.1",

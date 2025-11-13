@@ -22,7 +22,7 @@ function rowToRestaurant(row: any): Restaurant {
     id: row.id,
     name: row.name,
     slug: row.slug,
-    imageSlug: row.image_slug,
+    imageSlug: row.image_url ?? row.image_slug,
     distanceMiles: row.distance_miles ? Number(row.distance_miles) : undefined,
     mapsUrl: row.maps_url,
     eloGlobal: Number(row.elo_global),

@@ -59,8 +59,8 @@ export function getRestaurantImagePath(
       return imageSlug;
     }
 
-    // Relative path → return as-is (assume it targets /public)
-    return imageSlug;
+    // Relative path → normalize to start with leading slash for Next/Image
+    return imageSlug.startsWith('/') ? imageSlug : `/${imageSlug}`;
   }
 
   // Default: use slug with .webp (preferred format)

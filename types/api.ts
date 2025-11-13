@@ -68,6 +68,9 @@ export interface VoteRequest {
 
   /** Category being evaluated (must be votable) */
   readonly category: VotableCategory;
+
+  /** Optional user identifier (dev fallback is applied server-side if omitted) */
+  readonly userId?: string;
 }
 
 /**
@@ -135,6 +138,9 @@ export interface RankingEntry {
 
   /** Image slug for constructing image path */
   readonly imageSlug: string;
+
+  /** Google Maps URL (used client-side to derive coordinates) */
+  readonly mapsUrl?: string;
 
   /** Current rating for the requested category */
   readonly rating: number;
