@@ -49,6 +49,7 @@ export async function GET(
       name: restaurant.name,
       distanceMiles: restaurant.distanceMiles || 0,
       imageSlug: restaurant.imageSlug || restaurant.slug,
+      mapsUrl: restaurant.mapsUrl,
       rating: restaurant[ratingKey] as number,
       games: 0, // No longer tracked
     }));

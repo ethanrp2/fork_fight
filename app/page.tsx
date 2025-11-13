@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import useSWR from 'swr';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ApiResponse,
   MatchupResponse,
@@ -12,27 +12,64 @@ import type {
 import type { Restaurant, VotableCategory } from '@/types/restaurant';
 import { VOTABLE_CATEGORIES } from '@/types/restaurant';
 import { getRestaurantImagePath } from '@/lib/image';
+import { haversineMiles, parseLatLngFromMapsUrl, useUserLocation } from '@/lib/geo';
+import { useStickyState } from '../lib/stickyState';
+import { useSurveyState } from '@/lib/surveyState';
 
 type CardSide = 'A' | 'B';
 
 export default function Home() {
-  const [category, setCategory] = useState<VotableCategory>('value');
-  const [refreshIndex, setRefreshIndex] = useState(0);
-  const [lastVoteId, setLastVoteId] = useState<string | null>(null);
+  const [category, setCategory] = useStickyState<VotableCategory>('ff_survey_category', 'value');
+  const [refreshIndex, setRefreshIndex] = useStickyState<number>('ff_survey_refresh', 0);
+  const [lastVoteId, setLastVoteId] = useStickyState<string | null>('ff_survey_lastVoteId', null);
   const prefersReducedMotion = usePrefersReducedMotion();
+  const { coords, requestLocation } = useUserLocation();
+  const { snapshot, setSnapshot, clearSnapshot, isExpired } = useSurveyState();
+
+  const fallbackData: ApiResponse<MatchupResponse> | undefined = useMemo(() => {
+    if (!snapshot || isExpired || snapshot.category !== category) return undefined;
+    return {
+      ok: true,
+      data: {
+        matchup: snapshot.matchup,
+        restaurantA: snapshot.restaurantA,
+        restaurantB: snapshot.restaurantB,
+      },
+    };
+  }, [snapshot, isExpired, category]);
 
   const { data, isLoading, error, mutate } = useSWR(
     ['matchup', category, refreshIndex] as const,
-    fetchMatchup
+    fetchMatchup,
+    {
+      fallbackData,
+      revalidateOnMount: !fallbackData,
+    }
   );
 
   const matchup = data?.data?.matchup;
   const restaurantA = data?.data?.restaurantA;
   const restaurantB = data?.data?.restaurantB;
 
+  // Persist snapshot when data changes
+  useEffect(() => {
+    if (matchup && restaurantA && restaurantB) {
+      if (!snapshot || snapshot.matchup.id !== matchup.id) {
+        setSnapshot({
+          matchup,
+          restaurantA,
+          restaurantB,
+          category,
+          ts: Date.now(),
+        });
+      }
+    }
+  }, [matchup, restaurantA, restaurantB, setSnapshot, snapshot, category]);
+
   const onCategoryChange = useCallback((newCat: VotableCategory) => {
     setCategory(newCat);
-    setRefreshIndex((n) => n + 1);
+    clearSnapshot();
+    setRefreshIndex((n: number) => n + 1);
   }, []);
 
   const handleVote = useCallback(
@@ -61,7 +98,7 @@ export default function Home() {
   );
 
   const handleSkip = useCallback(async () => {
-    setRefreshIndex((n) => n + 1);
+    setRefreshIndex((n: number) => n + 1);
   }, []);
 
   const handleUndo = useCallback(async () => {
@@ -99,6 +136,14 @@ export default function Home() {
           value={category}
           onChange={onCategoryChange}
         />
+        {!coords ? (
+          <button
+            className="ml-2 px-3 h-[26px] rounded-[10px] bg-[#741B3F] text-white text-[14px]"
+            onClick={() => requestLocation()}
+          >
+            Use my location
+          </button>
+        ) : null}
       </div>
 
       <div className="mt-5 flex flex-col gap-5">
@@ -108,7 +153,7 @@ export default function Home() {
             <SkeletonCard />
           </>
         ) : error ? (
-          <ErrorState onRetry={() => setRefreshIndex((n) => n + 1)} />
+          <ErrorState onRetry={() => setRefreshIndex((n: number) => n + 1)} />
         ) : restaurantA && restaurantB && matchup ? (
           <>
             <SwipeableCard
@@ -125,7 +170,7 @@ export default function Home() {
             />
           </>
         ) : (
-          <EmptyState onRetry={() => setRefreshIndex((n) => n + 1)} />
+          <EmptyState onRetry={() => setRefreshIndex((n: number) => n + 1)} />
         )}
       </div>
 
@@ -146,10 +191,12 @@ export default function Home() {
         </button>
       </div>
 
-      <RestaurantSheet
-        restaurant={sheetRestaurant}
-        onClose={() => setSheetRestaurant(null)}
-      />
+      {useHasMounted() ? (
+        <RestaurantSheet
+          restaurant={sheetRestaurant}
+          onClose={() => setSheetRestaurant(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -288,6 +335,14 @@ function SwipeableCard(props: {
   };
 
   const src = useMemo(() => getRestaurantImagePath(restaurant), [restaurant]);
+  const { coords } = useUserLocation();
+  const distance = useMemo(() => {
+    if (coords && restaurant.mapsUrl) {
+      const ll = parseLatLngFromMapsUrl(restaurant.mapsUrl);
+      if (ll) return haversineMiles(coords, ll);
+    }
+    return restaurant.distanceMiles;
+  }, [coords, restaurant]);
 
   const style: React.CSSProperties = {
     transform: `translateX(${dx}px)`,
@@ -322,7 +377,7 @@ function SwipeableCard(props: {
       </div>
       <div className="absolute left-3 bottom-4 right-3">
         <p className="text-white text-[16px] leading-none">
-          {formatDistance(restaurant.distanceMiles)}
+          {formatDistance(distance)}
         </p>
       </div>
     </div>
@@ -336,6 +391,14 @@ function RestaurantSheet(props: {
   const { restaurant, onClose } = props;
   if (!restaurant) return null;
   const src = getRestaurantImagePath(restaurant);
+  const { coords } = useUserLocation();
+  const dynamicMiles = useMemo(() => {
+    if (coords && restaurant.mapsUrl) {
+      const ll = parseLatLngFromMapsUrl(restaurant.mapsUrl);
+      if (ll) return haversineMiles(coords, ll);
+    }
+    return restaurant.distanceMiles;
+  }, [coords, restaurant]);
   return (
     <div
       className="fixed inset-0 z-50"
@@ -362,7 +425,7 @@ function RestaurantSheet(props: {
           <Image src={src} alt="" fill className="object-cover" />
         </div>
         <div className="mt-3 text-sm text-zinc-700">
-          <p>Distance: {formatDistance(restaurant.distanceMiles)}</p>
+          <p>Distance: {formatDistance(dynamicMiles)}</p>
           {restaurant.mapsUrl ? (
             <p className="mt-1">
               <a
@@ -404,14 +467,11 @@ function formatDistance(miles?: number) {
 
 function usePrefersReducedMotion(): boolean {
   const [reduced, setReduced] = useState(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const mql = useMemo(
     () => (typeof window !== 'undefined' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null),
     []
   );
-  // Keep effect minimal
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useMemo(() => {
+  useEffect(() => {
     if (!mql) return;
     const listener = () => setReduced(mql.matches);
     setReduced(mql.matches);
@@ -419,6 +479,12 @@ function usePrefersReducedMotion(): boolean {
     return () => mql.removeEventListener?.('change', listener);
   }, [mql]);
   return reduced;
+}
+
+function useHasMounted(): boolean {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  return mounted;
 }
 
 async function fetchMatchup([_key, category]: readonly [string, VotableCategory, number]) {
