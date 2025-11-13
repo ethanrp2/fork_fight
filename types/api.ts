@@ -68,6 +68,9 @@ export interface VoteRequest {
 
   /** Category being evaluated (must be votable) */
   readonly category: VotableCategory;
+
+  /** Optional user identifier (dev fallback is applied server-side if omitted) */
+  readonly userId?: string;
 }
 
 /**
