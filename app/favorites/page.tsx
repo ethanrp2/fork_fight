@@ -34,22 +34,11 @@ export default function FavoritesPage() {
       // ignore failures to read storage/URL
     }
   }, []);
+  const { coords, requestLocation, clearLocation } = useUserLocation();
   const { data, isLoading, error } = useSWR(
-    ['rankings', category] as const,
+    ['rankings', category, coords?.lat ?? null, coords?.lng ?? null] as const,
     fetchRankings
   );
-  const { coords, requestLocation } = useUserLocation();
-
-  const distanceById = useMemo(() => {
-    if (!coords || !data?.data?.rankings) return null;
-    const map = new Map<string, number>();
-    for (const r of data.data.rankings) {
-      if (!r.mapsUrl) continue;
-      const ll = parseLatLngFromMapsUrl(r.mapsUrl);
-      if (ll) map.set(r.id, haversineMiles(coords, ll));
-    }
-    return map;
-  }, [coords, data]);
 
   const rankings = data?.data?.rankings ?? [];
 
@@ -80,7 +69,22 @@ export default function FavoritesPage() {
           >
             Use my location
           </button>
-        ) : null}
+        ) : (
+          <div className="inline-flex gap-2">
+            <button
+              className="px-3 h-[26px] rounded-[10px] bg-[#741B3F] text-white text-[14px]"
+              onClick={() => requestLocation()}
+            >
+              Update location
+            </button>
+            <button
+              className="px-3 h-[26px] rounded-[10px] bg-[#f1e6ea] text-[#222222] text-[14px]"
+              onClick={() => clearLocation()}
+            >
+              Clear
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="mt-6 flex flex-col gap-4">
@@ -97,7 +101,6 @@ export default function FavoritesPage() {
             <RankingRow
               key={r.id}
               entry={r}
-              overrideMiles={distanceById?.get(r.id)}
               onLongPress={() => setSheetEntry(r)}
             />
           ))
@@ -118,16 +121,14 @@ export default function FavoritesPage() {
 
 function RankingRow({
   entry,
-  overrideMiles,
   onLongPress,
 }: {
   entry: RankingsResponse['rankings'][number];
-  overrideMiles?: number;
   onLongPress: () => void;
 }) {
   const rankBg =
     entry.rank <= 3 ? '#741B3F' : '#C87F9C'; // Top 3 highlighted darker
-  const dynamicMiles = overrideMiles ?? entry.distanceMiles;
+  const dynamicMiles = entry.distanceMiles;
   const longPressTimer = useRef<number | null>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
   const hasLongPressed = useRef(false);
@@ -294,8 +295,15 @@ function RestaurantSheet(props: {
 // Data
 // -----------------------------------------------------------------------------
 
-async function fetchRankings([_key, category]: readonly [string, SortableCategory]) {
-  const res = await fetch(`/api/restaurants?category=${category}`, {
+async function fetchRankings(
+  [_key, category, lat, lng]: readonly [string, SortableCategory, number | null, number | null]
+) {
+  const params = new URLSearchParams({ category });
+  if (typeof lat === 'number' && typeof lng === 'number') {
+    params.set('userLat', String(lat));
+    params.set('userLng', String(lng));
+  }
+  const res = await fetch(`/api/restaurants?${params.toString()}`, {
     cache: 'no-store',
   });
   const json: ApiResponse<RankingsResponse> = await res.json();

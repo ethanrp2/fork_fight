@@ -117,6 +117,12 @@ type SortableCategory = 'global' | VotableCategory;
 - `elo_global`, `elo_value`, `elo_aesthetics`, `elo_speed` (all NUMERIC, default 1500)
 - `active` boolean (only show active restaurants)
 - Snake_case columns → camelCase in domain types
+- `image_url` TEXT (mapped to domain `imageSlug` for compatibility)
+- Optional geolocation and distance metadata:
+  - `lat` NUMERIC NULL
+  - `lng` NUMERIC NULL
+  - `distance_miles` NUMERIC NULL
+  - `maps_url` TEXT NULL
 
 **Votes Table:**
 - Category constraint: `CHECK (category IN ('value', 'aesthetics', 'speed'))`
@@ -179,13 +185,15 @@ This is the first screen customers see and is optimized for fast, repeatable vot
   - Skip (right, magenta `#741B3F`): Requests a new matchup without submitting a vote.
 
 ### Data Flow (App Router + SWR)
-- Fetch matchup: `GET /api/matchup?category={value|aesthetics|speed}`
+- Fetch matchup: `GET /api/matchup?category={value|aesthetics|speed}`. The category is read client-side from `sessionStorage` (`ff_survey_category`) by the fetcher.
 - Submit vote: `POST /api/vote` with `{ winnerId, loserId, category, matchupId }`
-  - Response includes `voteId` and updated ratings; store `lastVoteId` for Undo.
+  - Response includes `voteId` and updated ratings; persist `lastVoteId` (`ff_survey_lastVoteId`) for Undo.
 - Undo vote: `POST /api/undo` with `{ voteId }`
 - SWR:
-  - Keyed by `['matchup', category]`
+  - Keyed by `['matchup', refreshIndex]` where `refreshIndex` is a local counter used to trigger refreshes
+  - Uses `fallbackData` from a session snapshot to avoid spinner when returning to the page or after Undo
   - On successful vote or skip, revalidate to fetch the next pair
+  - On successful Undo, restore the previous matchup from the snapshot locally (no network), then clear `lastVoteId`
   - Optimistic UI for swipe animation; network failures roll back and show a toast
 
 ### States
@@ -193,8 +201,8 @@ This is the first screen customers see and is optimized for fast, repeatable vot
 - Empty/Exhausted: Friendly message and a “Try Again” action if no active restaurants are returned.
 - Error: Non-blocking toast with “Retry” and diagnostic logging (console only in dev).
 - Undo:
-  - Enabled only when there is a `lastVoteId` and the previous mutation succeeded.
-  - Show brief confirmation toast when undo completes.
+  - Enabled when there is a `lastVoteId` for the latest successful vote.
+  - On success, the previous matchup is restored from a client snapshot and `lastVoteId` is cleared so the user can re-vote immediately.
 
 ### Accessibility
 - All interactive elements are reachable via keyboard:
@@ -224,6 +232,9 @@ This is the first screen customers see and is optimized for fast, repeatable vot
 - `app/page.tsx` hosts the survey screen.
 - `components/BottomNav.tsx` anchors the bottom navigation.
 - Future components: `RestaurantCard`, `CategorySelector`, `RestaurantSheet`.
+- `lib/surveyState.ts` manages session-scoped survey snapshots:
+  - `ff_survey_snapshot` (current matchup, restaurants, category, timestamp)
+  - `ff_survey_prev_snapshot` (previous matchup for Undo restoration, 10-min TTL)
 
 ### Dev-Only User ID Fallback (Important)
 
@@ -245,6 +256,7 @@ Warnings and requirements:
 - `lib/geo.ts` offers:
   - `parseLatLngFromMapsUrl(mapsUrl)` to extract coordinates from a Google Maps URL.
   - `useUserLocation()` React hook to request/store user coordinates in localStorage and sync across tabs.
+  - Distance calculation prefers precise `lat`/`lng`, then falls back to coordinates parsed from `maps_url`, then to stored `distance_miles`.
 
 ### File Organization
 
@@ -297,7 +309,8 @@ export async function someRepoFunction() {
 
   const { data, error } = await supabase
     .from('table_name')
-    .select('explicit, column, list')  // Never SELECT *
+    // Prefer explicit column lists in production; select('*') is acceptable during development
+    .select('*')
     .eq('filter', value);
 
   if (error) {
@@ -336,6 +349,8 @@ const categoryKey = `elo${category.charAt(0).toUpperCase()}${category.slice(1)}`
 - `image_url` ↔ `imageSlug` (domain keeps `imageSlug` for backwards compatibility)
 - `distance_miles` ↔ `distanceMiles`
 - `maps_url` ↔ `mapsUrl`
+- `lat` ↔ `lat`
+- `lng` ↔ `lng`
 
 **Deprecated Types (backwards compatibility):**
 - `RatingCategory` - use `VotableCategory` or `SortableCategory`
@@ -383,6 +398,34 @@ ALTER TABLE public.restaurants
 - Repository maps DB → domain as: `image_url` ↔ `imageSlug` (domain keeps name for now).
 - Backfill and utility scripts now read/write `image_url`.
 
+### Migration: Add Latitude/Longitude Columns
+
+Add optional geolocation columns to improve distance calculations:
+
+```sql
+-- scripts/sql/add-lat-lng-columns.sql
+ALTER TABLE public.restaurants
+  ADD COLUMN IF NOT EXISTS lat numeric NULL,
+  ADD COLUMN IF NOT EXISTS lng numeric NULL;
+```
+
+Notes:
+- Frontend prefers `lat`/`lng` for distance; falls back to parsing from `maps_url`, then to `distance_miles`.
+
+## Survey Snapshot & Undo Restoration
+
+The survey uses a session-scoped snapshot to provide a smooth experience and enable local restoration after Undo:
+
+- `lib/surveyState.ts` stores:
+  - `ff_survey_snapshot`: the current matchup, restaurants, category, and a timestamp (`ts`).
+  - `ff_survey_prev_snapshot`: the previous matchup, used to restore UI after Undo.
+- TTL: 10 minutes; expired snapshots are ignored for `fallbackData`.
+- On data change in `app/page.tsx`, the current snapshot is rotated into `prev_snapshot` before writing the new snapshot.
+- After a successful Undo (`POST /api/undo`), the UI:
+  - Restores the previous snapshot into SWR cache without network calls,
+  - Clears the previous snapshot,
+  - Clears `lastVoteId` so the user can re-vote.
+
 ## Testing & Validation
 
 **Type Safety:**
@@ -397,11 +440,13 @@ npx tsc --noEmit  # Must pass with no errors
 - Trying to vote with `category='overall'` fails validation
 - Rankings with `category='global'` sorts by `elo_global`
  - `/api/matchup` with insufficient active restaurants returns 404 (NoMatchupError)
+ - Undo endpoint returns success and the UI restores the previous matchup locally (no new fetch)
+ - Attempting to undo the same `voteId` twice fails (vote is marked `undone`)
 
 **Common Pitfalls:**
 1. Forgetting to coerce NUMERIC columns with `Number()`
 2. Using nested access like `restaurant.ratings.value.rating` (old structure)
 3. Allowing 'overall' as a votable category (it's not!)
 4. Updating only one ELO rating instead of both (global + category)
-5. Using `SELECT *` instead of explicit column lists
-6. Missing Supabase server credentials (repositories will throw "Supabase not configured")
+5. Missing Supabase server credentials (repositories will throw "Supabase not configured")
+6. Not rotating the survey snapshot before writing the new matchup (breaks Undo restore)

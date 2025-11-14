@@ -103,6 +103,12 @@ export interface Restaurant {
   /** Image slug for cover photo */
   readonly imageSlug?: string;
 
+  /** Latitude (if available) */
+  readonly lat?: number;
+
+  /** Longitude (if available) */
+  readonly lng?: number;
+
   /** Distance from campus in miles */
   readonly distanceMiles?: number;
 

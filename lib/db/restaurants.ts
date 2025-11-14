@@ -23,6 +23,8 @@ function rowToRestaurant(row: any): Restaurant {
     name: row.name,
     slug: row.slug,
     imageSlug: row.image_url ?? row.image_slug,
+    lat: typeof row.lat === 'number' ? row.lat : (row.lat != null ? Number(row.lat) : undefined),
+    lng: typeof row.lng === 'number' ? row.lng : (row.lng != null ? Number(row.lng) : undefined),
     distanceMiles: row.distance_miles ? Number(row.distance_miles) : undefined,
     mapsUrl: row.maps_url,
     eloGlobal: Number(row.elo_global),

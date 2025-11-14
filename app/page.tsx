@@ -23,8 +23,8 @@ export default function Home() {
   const [refreshIndex, setRefreshIndex] = useStickyState<number>('ff_survey_refresh', 0);
   const [lastVoteId, setLastVoteId] = useStickyState<string | null>('ff_survey_lastVoteId', null);
   const prefersReducedMotion = usePrefersReducedMotion();
-  const { coords, requestLocation } = useUserLocation();
-  const { snapshot, setSnapshot, clearSnapshot, isExpired } = useSurveyState();
+  const { coords, requestLocation, clearLocation } = useUserLocation();
+	const { snapshot, setSnapshot, clearSnapshot, prevSnapshot, setPrevSnapshot, clearPrevSnapshot, isExpired } = useSurveyState();
 
   const fallbackData: ApiResponse<MatchupResponse> | undefined = useMemo(() => {
     if (!snapshot || isExpired) return undefined;
@@ -55,6 +55,10 @@ export default function Home() {
   useEffect(() => {
     if (matchup && restaurantA && restaurantB) {
       if (!snapshot || snapshot.matchup.id !== matchup.id) {
+				// rotate previous snapshot for undo
+				if (snapshot) {
+					setPrevSnapshot(snapshot);
+				}
         setSnapshot({
           matchup,
           restaurantA,
@@ -64,7 +68,7 @@ export default function Home() {
         });
       }
     }
-  }, [matchup, restaurantA, restaurantB, setSnapshot, snapshot, category]);
+	}, [matchup, restaurantA, restaurantB, setSnapshot, setPrevSnapshot, snapshot, category]);
 
   const onCategoryChange = useCallback((newCat: VotableCategory) => {
     setCategory(newCat);
@@ -100,7 +104,7 @@ export default function Home() {
     setRefreshIndex((n: number) => n + 1);
   }, []);
 
-  const handleUndo = useCallback(async () => {
+	const handleUndo = useCallback(async () => {
     if (!lastVoteId) return;
     const res = await fetch('/api/undo', {
       method: 'POST',
@@ -116,10 +120,24 @@ export default function Home() {
       alert(json.data?.reason ?? 'Nothing to undo');
       return;
     }
-    // keep current matchup, just acknowledge
-    alert('Last vote undone.');
-    setLastVoteId(null);
-  }, [lastVoteId]);
+		// Restore previous matchup so user can re-vote
+		if (prevSnapshot) {
+			const prevData: ApiResponse<MatchupResponse> = {
+				ok: true,
+				data: {
+					matchup: prevSnapshot.matchup,
+					restaurantA: prevSnapshot.restaurantA,
+					restaurantB: prevSnapshot.restaurantB,
+				},
+			};
+			// Update SWR cache without revalidating to immediately show previous matchup
+			await mutate(prevData, false);
+			// Set current snapshot back and clear previous
+			setSnapshot(prevSnapshot);
+			clearPrevSnapshot();
+		}
+		setLastVoteId(null);
+	}, [lastVoteId, prevSnapshot, mutate, setSnapshot, clearPrevSnapshot]);
 
   const [sheetRestaurant, setSheetRestaurant] = useState<Restaurant | null>(
     null
@@ -142,7 +160,22 @@ export default function Home() {
           >
             Use my location
           </button>
-        ) : null}
+        ) : (
+          <div className="inline-flex gap-2 ml-2">
+            <button
+              className="px-3 h-[26px] rounded-[10px] bg-[#741B3F] text-white text-[14px]"
+              onClick={() => requestLocation()}
+            >
+              Update location
+            </button>
+            <button
+              className="px-3 h-[26px] rounded-[10px] bg-[#f1e6ea] text-[#222222] text-[14px]"
+              onClick={() => clearLocation()}
+            >
+              Clear
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="mt-5 flex flex-col gap-5">
@@ -336,9 +369,14 @@ function SwipeableCard(props: {
   const src = useMemo(() => getRestaurantImagePath(restaurant), [restaurant]);
   const { coords } = useUserLocation();
   const distance = useMemo(() => {
-    if (coords && restaurant.mapsUrl) {
-      const ll = parseLatLngFromMapsUrl(restaurant.mapsUrl);
-      if (ll) return haversineMiles(coords, ll);
+    if (coords) {
+      if (typeof (restaurant as any).lat === 'number' && typeof (restaurant as any).lng === 'number') {
+        return haversineMiles(coords, { lat: (restaurant as any).lat, lng: (restaurant as any).lng });
+      }
+      if (restaurant.mapsUrl) {
+        const ll = parseLatLngFromMapsUrl(restaurant.mapsUrl);
+        if (ll) return haversineMiles(coords, ll);
+      }
     }
     return restaurant.distanceMiles;
   }, [coords, restaurant]);
@@ -358,7 +396,7 @@ function SwipeableCard(props: {
       onPointerCancel={handlePointerUp}
       style={style}
       role="group"
-      aria-label={`${restaurant.name}, ${formatDistance(restaurant.distanceMiles)}`}
+      aria-label={`${restaurant.name}, ${formatDistance(distance)}`}
     >
       <Image
         src={src}
@@ -390,9 +428,14 @@ function RestaurantSheet(props: {
   const { restaurant, onClose } = props;
   const { coords } = useUserLocation();
   const dynamicMiles = useMemo(() => {
-    if (coords && restaurant?.mapsUrl) {
-      const ll = parseLatLngFromMapsUrl(restaurant.mapsUrl);
-      if (ll) return haversineMiles(coords, ll);
+    if (coords && restaurant) {
+      if (typeof (restaurant as any).lat === 'number' && typeof (restaurant as any).lng === 'number') {
+        return haversineMiles(coords, { lat: (restaurant as any).lat, lng: (restaurant as any).lng });
+      }
+      if (restaurant.mapsUrl) {
+        const ll = parseLatLngFromMapsUrl(restaurant.mapsUrl);
+        if (ll) return haversineMiles(coords, ll);
+      }
     }
     return restaurant?.distanceMiles;
   }, [coords, restaurant]);
