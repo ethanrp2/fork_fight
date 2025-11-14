@@ -1,3 +1,6 @@
+// How to run:
+// - From C:\Users\yeyuc\Documents\courses\fork_fight:   npm run list:restaurants
+// - From C:\Users\yeyuc\Documents\courses:              npm --prefix fork_fight run list:restaurants
 import { createClient } from '@supabase/supabase-js';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -47,7 +50,7 @@ async function main() {
 
   const { data, error } = await supabase
     .from('restaurants')
-    .select('id, name, slug, image_url, maps_url, elo_global')
+    .select('*')
     .eq('active', true)
     .order('name', { ascending: true })
     .limit(10);
@@ -67,7 +70,7 @@ async function main() {
     name: r.name,
     slug: r.slug,
     elo_global: r.elo_global,
-    image_url: r.image_url,
+    image_url: r.image_url ?? r.image_slug,
     maps_url: r.maps_url,
   }));
 

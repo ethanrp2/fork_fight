@@ -27,7 +27,7 @@ export default function Home() {
   const { snapshot, setSnapshot, clearSnapshot, isExpired } = useSurveyState();
 
   const fallbackData: ApiResponse<MatchupResponse> | undefined = useMemo(() => {
-    if (!snapshot || isExpired || snapshot.category !== category) return undefined;
+    if (!snapshot || isExpired) return undefined;
     return {
       ok: true,
       data: {
@@ -36,10 +36,10 @@ export default function Home() {
         restaurantB: snapshot.restaurantB,
       },
     };
-  }, [snapshot, isExpired, category]);
+  }, [snapshot, isExpired]);
 
   const { data, isLoading, error, mutate } = useSWR(
-    ['matchup', category, refreshIndex] as const,
+    ['matchup', refreshIndex] as const,
     fetchMatchup,
     {
       fallbackData,
@@ -68,8 +68,7 @@ export default function Home() {
 
   const onCategoryChange = useCallback((newCat: VotableCategory) => {
     setCategory(newCat);
-    clearSnapshot();
-    setRefreshIndex((n: number) => n + 1);
+    // Keep current matchup pair when switching category
   }, []);
 
   const handleVote = useCallback(
@@ -389,16 +388,16 @@ function RestaurantSheet(props: {
   onClose: () => void;
 }) {
   const { restaurant, onClose } = props;
-  if (!restaurant) return null;
-  const src = getRestaurantImagePath(restaurant);
   const { coords } = useUserLocation();
   const dynamicMiles = useMemo(() => {
-    if (coords && restaurant.mapsUrl) {
+    if (coords && restaurant?.mapsUrl) {
       const ll = parseLatLngFromMapsUrl(restaurant.mapsUrl);
       if (ll) return haversineMiles(coords, ll);
     }
-    return restaurant.distanceMiles;
+    return restaurant?.distanceMiles;
   }, [coords, restaurant]);
+  if (!restaurant) return null;
+  const src = getRestaurantImagePath(restaurant);
   return (
     <div
       className="fixed inset-0 z-50"
@@ -487,8 +486,21 @@ function useHasMounted(): boolean {
   return mounted;
 }
 
-async function fetchMatchup([_key, category]: readonly [string, VotableCategory, number]) {
-  const res = await fetch(`/api/matchup?category=${category}`, { cache: 'no-store' });
+async function fetchMatchup([_key, _refreshIndex]: readonly [string, number]) {
+  // Read current survey category from sessionStorage to decide which category to fetch
+  let cat = 'value';
+  try {
+    const raw = sessionStorage.getItem('ff_survey_category');
+    if (raw != null) {
+      const parsed = JSON.parse(raw) as string;
+      if (parsed === 'value' || parsed === 'aesthetics' || parsed === 'speed') {
+        cat = parsed;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  const res = await fetch(`/api/matchup?category=${cat}`, { cache: 'no-store' });
   const json: ApiResponse<MatchupResponse> = await res.json();
   if (!json.ok) {
     throw new Error(json.error ?? 'Failed to load matchup');

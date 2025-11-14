@@ -58,6 +58,7 @@ The codebase follows a strict **3-phase layered architecture** documented in cod
 - Thin wrappers around Phase 2 functions
 - Input validation and error handling
 - Standard `ApiResponse<T>` envelope: `{ ok: boolean, data?: T, error?: string }`
+- Routes opt out of caching with `export const dynamic = 'force-dynamic'`
 
 ### Key Architectural Principles
 
@@ -108,6 +109,7 @@ type SortableCategory = 'global' | VotableCategory;
 **API endpoints must validate:**
 - `/api/matchup` and `/api/vote` - accept only `VotableCategory`
 - `/api/restaurants` - accepts `SortableCategory` (defaults to 'global')
+- `/api/matchup` requires `?category=...`; returns 404 if fewer than 2 active restaurants exist
 
 ### Database Schema
 
@@ -127,6 +129,10 @@ Always coerce Supabase NUMERIC columns to number:
 ```typescript
 eloGlobal: Number(row.elo_global)
 ```
+
+### Supabase Client
+- `lib/supabase.ts` exposes `getSupabaseAdmin()` and `getSupabasePublic()`.
+- Repositories call `getSupabaseAdmin()` and throw `"Supabase not configured"` if credentials are missing (no in-memory fallback).
 
 ### Mobile-First UI
 
@@ -235,6 +241,11 @@ Warnings and requirements:
 - The `VoteRequest` type includes `userId?: string` for completeness, but production clients should always provide a real user id.
 - Remove or gate the dev fallback behind `process.env.NODE_ENV !== 'production'` before going live.
 
+### Geolocation Utilities
+- `lib/geo.ts` offers:
+  - `parseLatLngFromMapsUrl(mapsUrl)` to extract coordinates from a Google Maps URL.
+  - `useUserLocation()` React hook to request/store user coordinates in localStorage and sync across tabs.
+
 ### File Organization
 
 ```
@@ -338,6 +349,12 @@ All API routes return:
 { ok: false, error: "..." } // Failure
 ```
 
+**Image Path Behavior:**
+- `lib/image.ts` computes display paths without I/O:
+  - If `imageSlug` is an absolute URL, use as-is.
+  - If `imageSlug` is a relative path, normalize with leading `/`.
+  - Otherwise fallback to `/restaurants/{slug}.webp` (preferred), with `.jpg`/`.png` as alternates via `getRestaurantImageCandidates`.
+
 ## Migration Context
 
 This codebase recently migrated from in-memory storage to Supabase with architectural simplification. See `SUPABASE_MIGRATION.md` for complete migration history and technical decisions. The migration:
@@ -379,6 +396,7 @@ npx tsc --noEmit  # Must pass with no errors
 - Undo reverses BOTH ratings exactly
 - Trying to vote with `category='overall'` fails validation
 - Rankings with `category='global'` sorts by `elo_global`
+ - `/api/matchup` with insufficient active restaurants returns 404 (NoMatchupError)
 
 **Common Pitfalls:**
 1. Forgetting to coerce NUMERIC columns with `Number()`
@@ -386,3 +404,4 @@ npx tsc --noEmit  # Must pass with no errors
 3. Allowing 'overall' as a votable category (it's not!)
 4. Updating only one ELO rating instead of both (global + category)
 5. Using `SELECT *` instead of explicit column lists
+6. Missing Supabase server credentials (repositories will throw "Supabase not configured")

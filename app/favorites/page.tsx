@@ -2,14 +2,38 @@
 
 import Image from 'next/image';
 import useSWR from 'swr';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ApiResponse, RankingsResponse } from '@/types/api';
 import type { SortableCategory } from '@/types/restaurant';
-import { SORTABLE_CATEGORIES } from '@/types/restaurant';
+import { SORTABLE_CATEGORIES, VOTABLE_CATEGORIES } from '@/types/restaurant';
 import { haversineMiles, parseLatLngFromMapsUrl, useUserLocation } from '@/lib/geo';
 
 export default function FavoritesPage() {
   const [category, setCategory] = useState<SortableCategory>('global');
+  const [sheetEntry, setSheetEntry] = useState<RankingsResponse['rankings'][number] | null>(null);
+
+  // Initialize category from URL (?category=...) or survey's sticky category (sessionStorage)
+  useEffect(() => {
+    try {
+      // Prefer explicit URL param if present
+      const params = new URLSearchParams(window.location.search);
+      const urlCategory = params.get('category');
+      if (urlCategory && SORTABLE_CATEGORIES.includes(urlCategory as SortableCategory)) {
+        setCategory(urlCategory as SortableCategory);
+        return;
+      }
+      // Otherwise, mirror the survey's current category (value/aesthetics/speed)
+      const raw = sessionStorage.getItem('ff_survey_category');
+      if (raw != null) {
+        const surveyCat = JSON.parse(raw) as string;
+        if (VOTABLE_CATEGORIES.includes(surveyCat as any)) {
+          setCategory(surveyCat as SortableCategory);
+        }
+      }
+    } catch {
+      // ignore failures to read storage/URL
+    }
+  }, []);
   const { data, isLoading, error } = useSWR(
     ['rankings', category] as const,
     fetchRankings
@@ -74,10 +98,16 @@ export default function FavoritesPage() {
               key={r.id}
               entry={r}
               overrideMiles={distanceById?.get(r.id)}
+              onLongPress={() => setSheetEntry(r)}
             />
           ))
         )}
       </div>
+
+      <RestaurantSheet
+        entry={sheetEntry}
+        onClose={() => setSheetEntry(null)}
+      />
     </div>
   );
 }
@@ -86,13 +116,61 @@ export default function FavoritesPage() {
 // Components
 // -----------------------------------------------------------------------------
 
-function RankingRow({ entry, overrideMiles }: { entry: RankingsResponse['rankings'][number]; overrideMiles?: number }) {
+function RankingRow({
+  entry,
+  overrideMiles,
+  onLongPress,
+}: {
+  entry: RankingsResponse['rankings'][number];
+  overrideMiles?: number;
+  onLongPress: () => void;
+}) {
   const rankBg =
     entry.rank <= 3 ? '#741B3F' : '#C87F9C'; // Top 3 highlighted darker
   const dynamicMiles = overrideMiles ?? entry.distanceMiles;
+  const longPressTimer = useRef<number | null>(null);
+  const start = useRef<{ x: number; y: number } | null>(null);
+  const hasLongPressed = useRef(false);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    start.current = { x: e.clientX, y: e.clientY };
+    hasLongPressed.current = false;
+    if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+    longPressTimer.current = window.setTimeout(() => {
+      hasLongPressed.current = true;
+      onLongPress();
+    }, 450);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!start.current) return;
+    const dx = e.clientX - start.current.x;
+    const dy = e.clientY - start.current.y;
+    if (Math.hypot(dx, dy) > 8 && longPressTimer.current) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handlePointerUp = () => {
+    start.current = null;
+    if (longPressTimer.current) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
 
   return (
-    <div className="flex items-center gap-[11px]">
+    <div
+      className="flex items-center gap-[11px] touch-pan-y select-none"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      role="group"
+      aria-label={`${entry.name}, ${formatDistance(dynamicMiles)}`}
+    >
       <div
         className="h-[66px] w-[71px] rounded-[15px] flex items-center justify-center"
         style={{ backgroundColor: rankBg }}
@@ -143,6 +221,75 @@ function ErrorState() {
   );
 }
 
+function RestaurantSheet(props: {
+  entry: RankingsResponse['rankings'][number] | null;
+  onClose: () => void;
+}) {
+  const { entry, onClose } = props;
+  const { coords } = useUserLocation();
+  const dynamicMiles = useMemo(() => {
+    if (coords && entry?.mapsUrl) {
+      const ll = parseLatLngFromMapsUrl(entry.mapsUrl);
+      if (ll) return haversineMiles(coords, ll);
+    }
+    return entry?.distanceMiles;
+  }, [coords, entry]);
+  if (!entry) return null;
+  const src = getRankingImageSrc(entry);
+
+  return (
+    <div
+      className="fixed inset-0 z-50"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${entry.name} details`}
+    >
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+      />
+      <div className="absolute left-0 right-0 bottom-0 mx-auto max-w-[480px] rounded-t-2xl bg-white p-4 shadow-2xl">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">{entry.name}</h2>
+          <button
+            className="h-8 w-8 rounded-full bg-zinc-100"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        <div className="mt-3 h-[180px] relative rounded-xl overflow-hidden">
+          <Image src={src} alt="" fill className="object-cover" />
+        </div>
+        <div className="mt-3 text-sm text-zinc-700">
+          <p>Distance: {formatDistance(dynamicMiles)}</p>
+          {entry.mapsUrl ? (
+            <p className="mt-1">
+              <a
+                className="text-[#741B3F] underline"
+                href={entry.mapsUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open in Maps
+              </a>
+            </p>
+          ) : null}
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button
+            className="px-4 py-2 rounded-lg bg-[#741B3F] text-white"
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // -----------------------------------------------------------------------------
 // Data
 // -----------------------------------------------------------------------------
@@ -162,7 +309,14 @@ async function fetchRankings([_key, category]: readonly [string, SortableCategor
 // Utils
 // -----------------------------------------------------------------------------
 
-function formatDistance(miles: number) {
+function formatDistance(miles?: number) {
   if (typeof miles !== 'number' || Number.isNaN(miles)) return '—';
   return `${miles.toFixed(1)} mi away`;
+}
+
+function getRankingImageSrc(entry: RankingsResponse['rankings'][number]): string {
+  const { imageSlug } = entry;
+  if (!imageSlug) return '/restaurants/placeholder.jpg';
+  const isAbs = imageSlug.startsWith('http://') || imageSlug.startsWith('https://');
+  return isAbs ? imageSlug : (imageSlug.startsWith('/') ? imageSlug : `/${imageSlug}`);
 }
