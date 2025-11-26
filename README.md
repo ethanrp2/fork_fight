@@ -4,6 +4,10 @@ ForkFight is a swipe-based restaurant ranking app built for UIUC students who ar
 
 This repo contains the mobile-first prototype, ELO engine, matchup flow, and ranking UI.
 
+## Screenshots
+<img width="281" height="611" alt="Screenshot 2025-11-25 at 11 59 59 PM" src="https://github.com/user-attachments/assets/398968fe-633e-4168-8e2b-738906cabc6d" />
+<img width="450" height="452" alt="Screenshot 2025-11-26 at 12 01 35 AM" src="https://github.com/user-attachments/assets/7f9b0cda-7469-4b4c-b0fd-dd82827668b4" />
+
 ## Why UIUC Needs This
 UIUC’s food ecosystem is broken in a very specific way:
 - Everyone recommends the same places (“BL, Thai Fusion, Shawty’s”)  
@@ -53,9 +57,4 @@ Share your list with friends to compare tastes or settle arguments immediately.
 - Instant feedback after each swipe  
 - Scores and rankings update in real time  
 - No analysis paralysis — just pick and keep going
-
-## App Screenshots (Insert Images)
-Replace with Figma or app screenshots.
-<img width="281" height="611" alt="Screenshot 2025-11-25 at 11 59 59 PM" src="https://github.com/user-attachments/assets/398968fe-633e-4168-8e2b-738906cabc6d" />
-<img width="450" height="452" alt="Screenshot 2025-11-26 at 12 01 35 AM" src="https://github.com/user-attachments/assets/7f9b0cda-7469-4b4c-b0fd-dd82827668b4" />
 
