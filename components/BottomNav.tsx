@@ -12,7 +12,7 @@ export default function BottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] bg-white pb-[env(safe-area-inset-bottom)] h-[80px] flex items-center justify-center gap-16 px-7 shadow-lg"
+      className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] bg-white pb-[env(safe-area-inset-bottom)] h-[90px] flex items-center justify-center gap-16 px-7 shadow-lg"
       aria-label="Main navigation"
     >
       {/* Survey */}
