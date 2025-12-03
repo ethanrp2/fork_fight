@@ -47,7 +47,7 @@ export default function FavoritesPage() {
       <h1 className="text-[35px] font-bold text-[#222222]">UIUC Favorites</h1>
 
       <div className="mt-4 flex items-center gap-3">
-        <span className="text-[16px] text-[#222222]">Sort By:</span>
+        <span className="text-[16px] font-normal text-[#222222]">Sort By:</span>
         <div className="relative">
           <select
             className="appearance-none bg-[#741B3F] text-white text-[16px] h-[26px] rounded-[10px] px-3 pr-7"
@@ -186,19 +186,37 @@ function RankingRow({
             <p className="text-[#222222] text-[25px] font-bold leading-none">
               {entry.name}
             </p>
-            <p className="text-[16px] leading-none mt-1">
+            <p className="text-[#222222] text-[16px] font-normal leading-none mt-1">
               {formatDistance(dynamicMiles)}
             </p>
           </div>
-          <div className="h-[40px] w-[41px] relative shrink-0">
-            <Image
-              src="/window.svg"
-              alt=""
-              fill
-              className="object-contain"
-              sizes="41px"
-            />
-          </div>
+          {entry.mapsUrl ? (
+            <a
+              href={entry.mapsUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="h-[40px] w-[41px] relative shrink-0"
+              aria-label={`Open ${entry.name} in Maps`}
+            >
+              <Image
+                src="/icons/loc_pin.svg"
+                alt=""
+                fill
+                className="object-contain"
+                sizes="41px"
+              />
+            </a>
+          ) : (
+            <div className="h-[40px] w-[41px] relative shrink-0">
+              <Image
+                src="/icons/loc_pin.svg"
+                alt=""
+                fill
+                className="object-contain"
+                sizes="41px"
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>

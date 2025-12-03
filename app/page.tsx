@@ -144,11 +144,13 @@ export default function Home() {
   );
 
   return (
-    <div className="pt-6 pb-28">
-      <LogoHeader />
+    <div className="flex flex-col h-[calc(100svh-80px-env(safe-area-inset-top))] min-h-0">
+      <div className="pt-6 shrink-0">
+        <LogoHeader />
+      </div>
 
-      <div className="mt-3">
-        <p className="text-[#222222] text-[16px]">Currently Ranking Based On:</p>
+      <div className="mt-3 shrink-0">
+        <p className="text-[#222222] text-[16px] font-normal">Currently Ranking Based On:</p>
         <CategorySelector
           value={category}
           onChange={onCategoryChange}
@@ -178,16 +180,18 @@ export default function Home() {
         )}
       </div>
 
-      <div className="mt-5 flex flex-col gap-5">
+      <div className="mt-5 flex-1 flex flex-col gap-5 min-h-0 overflow-hidden">
         {isLoading ? (
-          <>
+          <div className="flex flex-col gap-5 flex-1">
             <SkeletonCard />
             <SkeletonCard />
-          </>
+          </div>
         ) : error ? (
-          <ErrorState onRetry={() => setRefreshIndex((n: number) => n + 1)} />
+          <div className="flex-1 flex items-center justify-center">
+            <ErrorState onRetry={() => setRefreshIndex((n: number) => n + 1)} />
+          </div>
         ) : restaurantA && restaurantB && matchup ? (
-          <>
+          <div className="flex flex-col gap-5 flex-1 min-h-0">
             <SwipeableCard
               restaurant={restaurantA}
               onVote={() => handleVote(restaurantA, restaurantB)}
@@ -200,13 +204,15 @@ export default function Home() {
               onLongPress={() => setSheetRestaurant(restaurantB)}
               prefersReducedMotion={prefersReducedMotion}
             />
-          </>
+          </div>
         ) : (
-          <EmptyState onRetry={() => setRefreshIndex((n: number) => n + 1)} />
+          <div className="flex-1 flex items-center justify-center">
+            <EmptyState onRetry={() => setRefreshIndex((n: number) => n + 1)} />
+          </div>
         )}
       </div>
 
-      <div className="mt-6 grid grid-cols-2 gap-3">
+      <div className="mt-6 mb-4 grid grid-cols-2 gap-3 shrink-0">
         <button
           className="h-[51px] rounded-[15px] bg-[#F7DCAD] text-[#222222] text-[20px] font-bold"
           onClick={handleUndo}
@@ -413,7 +419,7 @@ function SwipeableCard(props: {
         </p>
       </div>
       <div className="absolute left-3 bottom-4 right-3">
-        <p className="text-white text-[16px] leading-none">
+        <p className="text-white text-[16px] font-normal leading-none">
           {formatDistance(distance)}
         </p>
       </div>
