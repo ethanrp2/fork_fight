@@ -23,6 +23,8 @@ function rowToRestaurant(row: any): Restaurant {
     name: row.name,
     slug: row.slug,
     imageSlug: row.image_url ?? row.image_slug,
+    lat: typeof row.lat === 'number' ? row.lat : (row.lat != null ? Number(row.lat) : undefined),
+    lng: typeof row.lng === 'number' ? row.lng : (row.lng != null ? Number(row.lng) : undefined),
     distanceMiles: row.distance_miles ? Number(row.distance_miles) : undefined,
     mapsUrl: row.maps_url,
     eloGlobal: Number(row.elo_global),
@@ -72,20 +74,42 @@ export async function getRestaurantById(
     throw new Error('Supabase not configured');
   }
 
-  const { data, error } = await supabase
-    .from('restaurants')
-    .select('*')
-    .eq('id', id)
-    .single();
+  // Small retry for transient network failures
+  let lastError: any = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const { data, error } = await supabase
+      .from('restaurants')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-  if (error) {
+    if (!error) {
+      return rowToRestaurant(data);
+    }
+
     if (error.code === 'PGRST116') {
       return null; // Not found
     }
-    throw new Error(`Failed to fetch restaurant: ${error.message}`);
+
+    lastError = error;
+
+    // Only retry on likely transient fetch failures
+    const message = String(error?.message ?? '');
+    const isTransient =
+      message.includes('fetch failed') ||
+      message.includes('ECONNRESET') ||
+      message.includes('ENOTFOUND') ||
+      message.includes('ETIMEDOUT');
+
+    if (!isTransient || attempt === 2) {
+      break;
+    }
+
+    // brief backoff
+    await new Promise((r) => setTimeout(r, 150));
   }
 
-  return rowToRestaurant(data);
+  throw new Error(`Failed to fetch restaurant ${id}: ${lastError?.message ?? 'unknown error'}`);
 }
 
 /**

@@ -23,11 +23,11 @@ export default function Home() {
   const [refreshIndex, setRefreshIndex] = useStickyState<number>('ff_survey_refresh', 0);
   const [lastVoteId, setLastVoteId] = useStickyState<string | null>('ff_survey_lastVoteId', null);
   const prefersReducedMotion = usePrefersReducedMotion();
-  const { coords, requestLocation } = useUserLocation();
-  const { snapshot, setSnapshot, clearSnapshot, isExpired } = useSurveyState();
+  const { coords, requestLocation, clearLocation } = useUserLocation();
+	const { snapshot, setSnapshot, clearSnapshot, prevSnapshot, setPrevSnapshot, clearPrevSnapshot, isExpired } = useSurveyState();
 
   const fallbackData: ApiResponse<MatchupResponse> | undefined = useMemo(() => {
-    if (!snapshot || isExpired || snapshot.category !== category) return undefined;
+    if (!snapshot || isExpired) return undefined;
     return {
       ok: true,
       data: {
@@ -36,10 +36,10 @@ export default function Home() {
         restaurantB: snapshot.restaurantB,
       },
     };
-  }, [snapshot, isExpired, category]);
+  }, [snapshot, isExpired]);
 
   const { data, isLoading, error, mutate } = useSWR(
-    ['matchup', category, refreshIndex] as const,
+    ['matchup', refreshIndex] as const,
     fetchMatchup,
     {
       fallbackData,
@@ -55,6 +55,10 @@ export default function Home() {
   useEffect(() => {
     if (matchup && restaurantA && restaurantB) {
       if (!snapshot || snapshot.matchup.id !== matchup.id) {
+				// rotate previous snapshot for undo
+				if (snapshot) {
+					setPrevSnapshot(snapshot);
+				}
         setSnapshot({
           matchup,
           restaurantA,
@@ -64,12 +68,11 @@ export default function Home() {
         });
       }
     }
-  }, [matchup, restaurantA, restaurantB, setSnapshot, snapshot, category]);
+	}, [matchup, restaurantA, restaurantB, setSnapshot, setPrevSnapshot, snapshot, category]);
 
   const onCategoryChange = useCallback((newCat: VotableCategory) => {
     setCategory(newCat);
-    clearSnapshot();
-    setRefreshIndex((n: number) => n + 1);
+    // Keep current matchup pair when switching category
   }, []);
 
   const handleVote = useCallback(
@@ -101,7 +104,7 @@ export default function Home() {
     setRefreshIndex((n: number) => n + 1);
   }, []);
 
-  const handleUndo = useCallback(async () => {
+	const handleUndo = useCallback(async () => {
     if (!lastVoteId) return;
     const res = await fetch('/api/undo', {
       method: 'POST',
@@ -117,45 +120,63 @@ export default function Home() {
       alert(json.data?.reason ?? 'Nothing to undo');
       return;
     }
-    // keep current matchup, just acknowledge
-    alert('Last vote undone.');
-    setLastVoteId(null);
-  }, [lastVoteId]);
+		// Restore previous matchup so user can re-vote
+		if (prevSnapshot) {
+			const prevData: ApiResponse<MatchupResponse> = {
+				ok: true,
+				data: {
+					matchup: prevSnapshot.matchup,
+					restaurantA: prevSnapshot.restaurantA,
+					restaurantB: prevSnapshot.restaurantB,
+				},
+			};
+			// Update SWR cache without revalidating to immediately show previous matchup
+			await mutate(prevData, false);
+			// Set current snapshot back and clear previous
+			setSnapshot(prevSnapshot);
+			clearPrevSnapshot();
+		}
+		setLastVoteId(null);
+	}, [lastVoteId, prevSnapshot, mutate, setSnapshot, clearPrevSnapshot]);
 
   const [sheetRestaurant, setSheetRestaurant] = useState<Restaurant | null>(
     null
   );
 
   return (
-    <div className="pt-6 pb-28">
-      <LogoHeader />
-
-      <div className="mt-3">
-        <p className="text-[#222222] text-[16px]">Currently Ranking Based On:</p>
-        <CategorySelector
-          value={category}
-          onChange={onCategoryChange}
-        />
-        {!coords ? (
-          <button
-            className="ml-2 px-3 h-[26px] rounded-[10px] bg-[#741B3F] text-white text-[14px]"
-            onClick={() => requestLocation()}
-          >
-            Use my location
-          </button>
-        ) : null}
+    <div className="flex flex-col h-[calc(100svh-80px-env(safe-area-inset-top))] min-h-0">
+      <div className="pt-6 shrink-0">
+        <LogoHeader />
       </div>
 
-      <div className="mt-5 flex flex-col gap-5">
+      <div className="mt-3 shrink-0">
+        <p className="text-[#222222] text-[16px] font-normal">Currently Ranking Based On:</p>
+        <div className="flex items-center gap-2 mt-2">
+          <CategorySelector
+            value={category}
+            onChange={onCategoryChange}
+          />
+          <button
+            className="px-3 h-[26px] rounded-[10px] bg-[#741B3F] text-white text-[14px] shrink-0"
+            onClick={() => coords ? clearLocation() : requestLocation()}
+          >
+            {coords ? 'Disable Location' : 'Use my location'}
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-5 flex-1 flex flex-col gap-5 min-h-0 overflow-hidden">
         {isLoading ? (
-          <>
+          <div className="flex flex-col gap-5 flex-1">
             <SkeletonCard />
             <SkeletonCard />
-          </>
+          </div>
         ) : error ? (
-          <ErrorState onRetry={() => setRefreshIndex((n: number) => n + 1)} />
+          <div className="flex-1 flex items-center justify-center">
+            <ErrorState onRetry={() => setRefreshIndex((n: number) => n + 1)} />
+          </div>
         ) : restaurantA && restaurantB && matchup ? (
-          <>
+          <div className="flex flex-col gap-5 flex-1 min-h-0">
             <SwipeableCard
               restaurant={restaurantA}
               onVote={() => handleVote(restaurantA, restaurantB)}
@@ -168,13 +189,15 @@ export default function Home() {
               onLongPress={() => setSheetRestaurant(restaurantB)}
               prefersReducedMotion={prefersReducedMotion}
             />
-          </>
+          </div>
         ) : (
-          <EmptyState onRetry={() => setRefreshIndex((n: number) => n + 1)} />
+          <div className="flex-1 flex items-center justify-center">
+            <EmptyState onRetry={() => setRefreshIndex((n: number) => n + 1)} />
+          </div>
         )}
       </div>
 
-      <div className="mt-6 grid grid-cols-2 gap-3">
+      <div className="mt-6 mb-4 grid grid-cols-2 gap-3 shrink-0">
         <button
           className="h-[51px] rounded-[15px] bg-[#F7DCAD] text-[#222222] text-[20px] font-bold"
           onClick={handleUndo}
@@ -337,9 +360,14 @@ function SwipeableCard(props: {
   const src = useMemo(() => getRestaurantImagePath(restaurant), [restaurant]);
   const { coords } = useUserLocation();
   const distance = useMemo(() => {
-    if (coords && restaurant.mapsUrl) {
-      const ll = parseLatLngFromMapsUrl(restaurant.mapsUrl);
-      if (ll) return haversineMiles(coords, ll);
+    if (coords) {
+      if (typeof (restaurant as any).lat === 'number' && typeof (restaurant as any).lng === 'number') {
+        return haversineMiles(coords, { lat: (restaurant as any).lat, lng: (restaurant as any).lng });
+      }
+      if (restaurant.mapsUrl) {
+        const ll = parseLatLngFromMapsUrl(restaurant.mapsUrl);
+        if (ll) return haversineMiles(coords, ll);
+      }
     }
     return restaurant.distanceMiles;
   }, [coords, restaurant]);
@@ -359,7 +387,7 @@ function SwipeableCard(props: {
       onPointerCancel={handlePointerUp}
       style={style}
       role="group"
-      aria-label={`${restaurant.name}, ${formatDistance(restaurant.distanceMiles)}`}
+      aria-label={`${restaurant.name}, ${formatDistance(distance)}`}
     >
       <Image
         src={src}
@@ -376,7 +404,7 @@ function SwipeableCard(props: {
         </p>
       </div>
       <div className="absolute left-3 bottom-4 right-3">
-        <p className="text-white text-[16px] leading-none">
+        <p className="text-white text-[16px] font-normal leading-none">
           {formatDistance(distance)}
         </p>
       </div>
@@ -389,16 +417,21 @@ function RestaurantSheet(props: {
   onClose: () => void;
 }) {
   const { restaurant, onClose } = props;
-  if (!restaurant) return null;
-  const src = getRestaurantImagePath(restaurant);
   const { coords } = useUserLocation();
   const dynamicMiles = useMemo(() => {
-    if (coords && restaurant.mapsUrl) {
-      const ll = parseLatLngFromMapsUrl(restaurant.mapsUrl);
-      if (ll) return haversineMiles(coords, ll);
+    if (coords && restaurant) {
+      if (typeof (restaurant as any).lat === 'number' && typeof (restaurant as any).lng === 'number') {
+        return haversineMiles(coords, { lat: (restaurant as any).lat, lng: (restaurant as any).lng });
+      }
+      if (restaurant.mapsUrl) {
+        const ll = parseLatLngFromMapsUrl(restaurant.mapsUrl);
+        if (ll) return haversineMiles(coords, ll);
+      }
     }
-    return restaurant.distanceMiles;
+    return restaurant?.distanceMiles;
   }, [coords, restaurant]);
+  if (!restaurant) return null;
+  const src = getRestaurantImagePath(restaurant);
   return (
     <div
       className="fixed inset-0 z-50"
@@ -487,8 +520,21 @@ function useHasMounted(): boolean {
   return mounted;
 }
 
-async function fetchMatchup([_key, category]: readonly [string, VotableCategory, number]) {
-  const res = await fetch(`/api/matchup?category=${category}`, { cache: 'no-store' });
+async function fetchMatchup([_key, _refreshIndex]: readonly [string, number]) {
+  // Read current survey category from sessionStorage to decide which category to fetch
+  let cat = 'value';
+  try {
+    const raw = sessionStorage.getItem('ff_survey_category');
+    if (raw != null) {
+      const parsed = JSON.parse(raw) as string;
+      if (parsed === 'value' || parsed === 'aesthetics' || parsed === 'speed') {
+        cat = parsed;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  const res = await fetch(`/api/matchup?category=${cat}`, { cache: 'no-store' });
   const json: ApiResponse<MatchupResponse> = await res.json();
   if (!json.ok) {
     throw new Error(json.error ?? 'Failed to load matchup');
