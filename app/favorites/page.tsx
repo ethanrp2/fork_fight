@@ -43,68 +43,76 @@ export default function FavoritesPage() {
   const rankings = data?.data?.rankings ?? [];
 
   return (
-    <div className="pt-6 pb-28">
-      <h1 className="text-[35px] font-bold text-[#222222]">UIUC Favorites</h1>
-
-      <div className="mt-4 flex items-center gap-3">
-        <span className="text-[16px] font-normal text-[#222222]">Sort By:</span>
-        <div className="relative">
-          <select
-            className="appearance-none bg-[#741B3F] text-white text-[16px] h-[26px] rounded-[10px] px-3 pr-7"
-            value={category}
-            onChange={(e) => setCategory(e.target.value as SortableCategory)}
-            aria-label="Sort rankings by category"
-          >
-            <option value="global">All</option>
-            <option value="value">Value</option>
-            <option value="aesthetics">Aesthetics</option>
-            <option value="speed">Speed</option>
-          </select>
-          <span className="pointer-events-none absolute right-2 top-1 text-white">⌄</span>
+    <div className="flex flex-col h-[calc(100svh-80px-env(safe-area-inset-top))] min-h-0 bg-white">
+      {/* Fixed Header */}
+      <div className="shrink-0 pt-6 pb-4 bg-white">
+        <div className="flex items-center justify-center mb-4">
+          <h1 className="text-[35px] font-bold text-[#222222]">UIUC Favorites</h1>
         </div>
-        {!coords ? (
-          <button
-            className="px-3 h-[26px] rounded-[10px] bg-[#741B3F] text-white text-[14px]"
-            onClick={() => requestLocation()}
-          >
-            Use my location
-          </button>
-        ) : (
-          <div className="inline-flex gap-2">
+
+        <div className="flex items-center gap-3">
+          <span className="text-[16px] font-normal text-[#222222]">Sort By:</span>
+          <div className="relative">
+            <select
+              className="appearance-none bg-[#741B3F] text-white text-[16px] h-[26px] rounded-[10px] px-3 pr-7"
+              value={category}
+              onChange={(e) => setCategory(e.target.value as SortableCategory)}
+              aria-label="Sort rankings by category"
+            >
+              <option value="global">All</option>
+              <option value="value">Value</option>
+              <option value="aesthetics">Aesthetics</option>
+              <option value="speed">Speed</option>
+            </select>
+            <span className="pointer-events-none absolute right-2 top-1 text-white">⌄</span>
+          </div>
+          {!coords ? (
             <button
               className="px-3 h-[26px] rounded-[10px] bg-[#741B3F] text-white text-[14px]"
               onClick={() => requestLocation()}
             >
-              Update location
+              Use my location
             </button>
-            <button
-              className="px-3 h-[26px] rounded-[10px] bg-[#f1e6ea] text-[#222222] text-[14px]"
-              onClick={() => clearLocation()}
-            >
-              Clear
-            </button>
-          </div>
-        )}
+          ) : (
+            <div className="inline-flex gap-2">
+              <button
+                className="px-3 h-[26px] rounded-[10px] bg-[#741B3F] text-white text-[14px]"
+                onClick={() => requestLocation()}
+              >
+                Update location
+              </button>
+              <button
+                className="px-3 h-[26px] rounded-[10px] bg-[#f1e6ea] text-[#222222] text-[14px]"
+                onClick={() => clearLocation()}
+              >
+                Clear
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="mt-6 flex flex-col gap-4">
-        {isLoading ? (
-          <>
-            <SkeletonRow />
-            <SkeletonRow />
-            <SkeletonRow />
-          </>
-        ) : error ? (
-          <ErrorState />
-        ) : (
-          rankings.map((r) => (
-            <RankingRow
-              key={r.id}
-              entry={r}
-              onLongPress={() => setSheetEntry(r)}
-            />
-          ))
-        )}
+      {/* Scrollable Restaurant Cards */}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="flex flex-col gap-[17px] pb-4">
+          {isLoading ? (
+            <>
+              <SkeletonRow />
+              <SkeletonRow />
+              <SkeletonRow />
+            </>
+          ) : error ? (
+            <ErrorState />
+          ) : (
+            rankings.map((r) => (
+              <RankingRow
+                key={r.id}
+                entry={r}
+                onLongPress={() => setSheetEntry(r)}
+              />
+            ))
+          )}
+        </div>
       </div>
 
       <RestaurantSheet

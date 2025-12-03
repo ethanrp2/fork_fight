@@ -151,33 +151,18 @@ export default function Home() {
 
       <div className="mt-3 shrink-0">
         <p className="text-[#222222] text-[16px] font-normal">Currently Ranking Based On:</p>
-        <CategorySelector
-          value={category}
-          onChange={onCategoryChange}
-        />
-        {!coords ? (
+        <div className="flex items-center gap-2 mt-2">
+          <CategorySelector
+            value={category}
+            onChange={onCategoryChange}
+          />
           <button
-            className="ml-2 px-3 h-[26px] rounded-[10px] bg-[#741B3F] text-white text-[14px]"
-            onClick={() => requestLocation()}
+            className="px-3 h-[26px] rounded-[10px] bg-[#741B3F] text-white text-[14px] shrink-0"
+            onClick={() => coords ? clearLocation() : requestLocation()}
           >
-            Use my location
+            {coords ? 'Disable Location' : 'Use my location'}
           </button>
-        ) : (
-          <div className="inline-flex gap-2 ml-2">
-            <button
-              className="px-3 h-[26px] rounded-[10px] bg-[#741B3F] text-white text-[14px]"
-              onClick={() => requestLocation()}
-            >
-              Update location
-            </button>
-            <button
-              className="px-3 h-[26px] rounded-[10px] bg-[#f1e6ea] text-[#222222] text-[14px]"
-              onClick={() => clearLocation()}
-            >
-              Clear
-            </button>
-          </div>
-        )}
+        </div>
       </div>
 
       <div className="mt-5 flex-1 flex flex-col gap-5 min-h-0 overflow-hidden">
