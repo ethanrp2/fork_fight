@@ -1,50 +1,17 @@
+'use client';
+
 import { useCallback, useEffect, useState } from 'react';
 
-export interface LatLng {
-  readonly lat: number;
-  readonly lng: number;
-}
-
-/**
- * Parse lat/lng from a Google Maps URL.
- * Supports "...@lat,lng,..." and "...?q=lat,lng".
- */
-export function parseLatLngFromMapsUrl(mapsUrl?: string | null): LatLng | null {
-  if (!mapsUrl) return null;
-  const atMatch = mapsUrl.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
-  if (atMatch) {
-    return { lat: Number(atMatch[1]), lng: Number(atMatch[2]) };
-  }
-  const qMatch = mapsUrl.match(/[?&]q=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
-  if (qMatch) {
-    return { lat: Number(qMatch[1]), lng: Number(qMatch[2]) };
-  }
-  return null;
-}
-
-/**
- * Haversine distance in miles between two coordinates.
- */
-export function haversineMiles(a: LatLng, b: LatLng): number {
-  const R = 3958.8; // Earth radius in miles
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLon = toRad(b.lng - a.lng);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const h =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-  return R * c;
-}
+// Re-export pure utilities for backward compatibility
+export { haversineMiles, parseLatLngFromMapsUrl } from './geo-utils';
+export type { LatLng } from './geo-utils';
 
 /**
  * Hook to get and persist user's geolocation.
  * Stores in localStorage to persist across navigation.
  */
 export function useUserLocation() {
-  const [coords, setCoords] = useState<LatLng | null>(null);
+  const [coords, setCoords] = useState<import('./geo-utils').LatLng | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [permission, setPermission] = useState<'granted' | 'denied' | 'prompt' | 'unknown'>('unknown');
 
@@ -53,7 +20,7 @@ export function useUserLocation() {
     try {
       const saved = localStorage.getItem('ff_user_location');
       if (saved) {
-        const parsed = JSON.parse(saved) as LatLng;
+        const parsed = JSON.parse(saved) as import('./geo-utils').LatLng;
         if (typeof parsed?.lat === 'number' && typeof parsed?.lng === 'number') {
           setCoords(parsed);
         }
@@ -66,7 +33,7 @@ export function useUserLocation() {
       if (e.key === 'ff_user_location') {
         try {
           if (e.newValue) {
-            const parsed = JSON.parse(e.newValue) as LatLng;
+            const parsed = JSON.parse(e.newValue) as import('./geo-utils').LatLng;
             if (typeof parsed?.lat === 'number' && typeof parsed?.lng === 'number') {
               setCoords(parsed);
             }
@@ -79,7 +46,7 @@ export function useUserLocation() {
     // Listen to same-tab updates via custom event
     const onCustom = (e: Event) => {
       try {
-        const detail = (e as CustomEvent).detail as LatLng | null;
+        const detail = (e as CustomEvent).detail as import('./geo-utils').LatLng | null;
         if (detail && typeof detail.lat === 'number' && typeof detail.lng === 'number') {
           setCoords(detail);
         }
@@ -117,7 +84,7 @@ export function useUserLocation() {
       setError('Geolocation not supported');
       return null;
     }
-    return new Promise<LatLng | null>((resolve) => {
+    return new Promise<import('./geo-utils').LatLng | null>((resolve) => {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const next = { lat: pos.coords.latitude, lng: pos.coords.longitude };
@@ -147,4 +114,3 @@ export function useUserLocation() {
 
   return { coords, error, permission, requestLocation, clearLocation };
 }
-

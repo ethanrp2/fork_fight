@@ -8,7 +8,7 @@ import type { ApiResponse, RankingsResponse, RankingEntry } from '@/types/api';
 import type { SortableCategory } from '@/types/restaurant';
 import { SORTABLE_CATEGORIES } from '@/types/restaurant';
 import { getRankings } from '@/lib/rankings';
-import { haversineMiles, parseLatLngFromMapsUrl } from '@/lib/geo';
+import { haversineMiles, parseLatLngFromMapsUrl } from '@/lib/geo-utils';
 
 // Disable caching
 export const dynamic = 'force-dynamic';
