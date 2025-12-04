@@ -12,6 +12,7 @@ import { haversineMiles, parseLatLngFromMapsUrl, useUserLocation } from '@/lib/g
 
 export default function MyFavoritesPage() {
   const [category, setCategory] = useState<SortableCategory>('global');
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
   const { user, loading } = useAuthUser();
   const { coords, requestLocation, clearLocation } = useUserLocation();
 
@@ -37,6 +38,69 @@ export default function MyFavoritesPage() {
   );
 
   const rankings = data?.rankings ?? [];
+
+  const getCategoryDisplayName = (cat: SortableCategory): string => {
+    switch (cat) {
+      case 'global':
+        return 'All';
+      case 'value':
+        return 'Value';
+      case 'aesthetics':
+        return 'Aesthetics';
+      case 'speed':
+        return 'Speed';
+      default:
+        return 'All';
+    }
+  };
+
+  const handleShare = async () => {
+    const top5 = rankings.slice(0, 5);
+    
+    if (top5.length < 5) {
+      return;
+    }
+
+    const categoryName = getCategoryDisplayName(category);
+    const shareText = `My Top 5 Restaurants - ${categoryName}\n\n${top5.map((r, idx) => `${idx + 1}. ${r.name}`).join('\n')}`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `My Top 5 Restaurants - ${categoryName}`,
+          text: shareText,
+        });
+      } else if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(shareText);
+        setShareFeedback('Copied to clipboard!');
+        setTimeout(() => setShareFeedback(null), 2000);
+      } else {
+        // Fallback for very old browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = shareText;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          setShareFeedback('Copied to clipboard!');
+          setTimeout(() => setShareFeedback(null), 2000);
+        } catch (err) {
+          console.error('Failed to copy:', err);
+        } finally {
+          document.body.removeChild(textArea);
+        }
+      }
+    } catch (err: any) {
+      // User cancelled or error occurred
+      if (err.name !== 'AbortError') {
+        console.error('Share failed:', err);
+      }
+    }
+  };
+
+  const canShare = rankings.length >= 5 && !isLoading;
 
   return (
     <RequireAuth>
@@ -90,18 +154,27 @@ export default function MyFavoritesPage() {
               </button>
             </div>
           )}
-          <button
-            className="h-[36px] w-[32px] relative shrink-0"
-            aria-label="Share"
-          >
-            <Image
-              src="/icons/share.svg"
-              alt=""
-              fill
-              className="object-contain"
-              sizes="32px"
-            />
-          </button>
+          <div className="flex flex-col items-end gap-1">
+            <button
+              className="h-[36px] w-[32px] relative shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Share top 5 restaurants"
+              onClick={handleShare}
+              disabled={!canShare}
+            >
+              <Image
+                src="/icons/share.svg"
+                alt=""
+                fill
+                className="object-contain"
+                sizes="32px"
+              />
+            </button>
+            {shareFeedback && (
+              <span className="text-[12px] text-[#741B3F] whitespace-nowrap">
+                {shareFeedback}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
