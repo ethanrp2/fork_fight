@@ -58,3 +58,6 @@ Share your list with friends to compare tastes or settle arguments immediately.
 - Scores and rankings update in real time  
 - No analysis paralysis — just pick and keep going
 
+### 📍 Location Permission
+Click “Use My Location” in the app to enable distance calculations and nearby sorting.
+

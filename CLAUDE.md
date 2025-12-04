@@ -236,21 +236,15 @@ This is the first screen customers see and is optimized for fast, repeatable vot
   - `ff_survey_snapshot` (current matchup, restaurants, category, timestamp)
   - `ff_survey_prev_snapshot` (previous matchup for Undo restoration, 10-min TTL)
 
-### Dev-Only User ID Fallback (Important)
+### Authentication & User ID
 
-During development, the vote API applies a default user identifier when the client does not provide one:
+All write endpoints require a real, authenticated user id. There is no development fallback (`'dev-user'` has been removed).
 
-```typescript
-// app/api/vote/route.ts (server)
-const userId = body.userId ?? 'dev-user';
-```
-
-This is intended only to satisfy the database `votes.user_id NOT NULL` constraint for local testing, allowing votes to be stored without a full auth flow.
-
-Warnings and requirements:
-- Do NOT rely on `'dev-user'` in production. Replace with a real authenticated user id from your auth provider.
-- The `VoteRequest` type includes `userId?: string` for completeness, but production clients should always provide a real user id.
-- Remove or gate the dev fallback behind `process.env.NODE_ENV !== 'production'` before going live.
+- Clients should obtain the current user via Supabase Auth and include `userId` where required (e.g., `POST /api/vote`, `POST /api/restaurants/personal`).
+- Use `useAuthUser()` from `lib/auth.ts` on the client to access the signed-in user and pass `user.id` to server endpoints.
+- Server behavior:
+  - `POST /api/vote` returns 401 if `userId` is missing or invalid.
+  - `POST /api/restaurants/personal` requires `userId` and an optional `category`.
 
 ### Geolocation Utilities
 - `lib/geo.ts` offers:
@@ -283,10 +277,14 @@ app/
     matchup/route.ts    - GET: Generate random restaurant pair
     vote/route.ts       - POST: Submit vote, update ratings
     undo/route.ts       - POST: Reverse last vote
-    restaurants/route.ts - GET: Rankings by category
+    restaurants/route.ts - GET: Rankings by category (global)
+    restaurants/personal/route.ts - POST: Personal rankings by category
   layout.tsx            - Root layout with bottom nav
   page.tsx              - Home page
-  favorites/page.tsx    - UIUC favorites (placeholder)
+  favorites/page.tsx    - UIUC favorites
+  my-favorites/page.tsx - Personal favorites
+  login/page.tsx        - Sign in
+  register/page.tsx     - Sign up
   game/page.tsx         - Survey/voting UI (placeholder)
 
 components/
@@ -442,6 +440,8 @@ npx tsc --noEmit  # Must pass with no errors
  - `/api/matchup` with insufficient active restaurants returns 404 (NoMatchupError)
  - Undo endpoint returns success and the UI restores the previous matchup locally (no new fetch)
  - Attempting to undo the same `voteId` twice fails (vote is marked `undone`)
+- `POST /api/vote` requires `userId` and returns 401 when absent/invalid
+- `POST /api/restaurants/personal` requires `userId`; optional `category` defaults to `'global'`
 
 **Common Pitfalls:**
 1. Forgetting to coerce NUMERIC columns with `Number()`
