@@ -48,6 +48,8 @@ export async function getPersonalRankings(
 			id: r.id,
 			name: r.name,
 			distanceMiles: (r as any).distanceMiles,
+			lat: (r as any).lat,
+			lng: (r as any).lng,
 			imageSlug: r.imageSlug || r.slug,
 			mapsUrl: r.mapsUrl,
 			rating,

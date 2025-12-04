@@ -144,10 +144,17 @@ function RankingRow({ restaurant, userCoords }: { restaurant: RankingEntry; user
   const start = useRef<{ x: number; y: number } | null>(null);
   const hasLongPressed = useRef(false);
   const dynamicMiles = useMemo(() => {
-    if (userCoords && restaurant.mapsUrl) {
-      const ll = parseLatLngFromMapsUrl(restaurant.mapsUrl);
-      if (ll) {
-        return haversineMiles(userCoords, ll);
+    if (userCoords) {
+      const lat = (restaurant as any).lat;
+      const lng = (restaurant as any).lng;
+      if (typeof lat === 'number' && typeof lng === 'number') {
+        return haversineMiles(userCoords, { lat, lng });
+      }
+      if (restaurant.mapsUrl) {
+        const ll = parseLatLngFromMapsUrl(restaurant.mapsUrl);
+        if (ll) {
+          return haversineMiles(userCoords, ll);
+        }
       }
     }
     return restaurant.distanceMiles;
