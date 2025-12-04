@@ -5,20 +5,22 @@ import { useEffect, useState } from 'react';
  * Returns [value, setValue].
  */
 export function useStickyState<T>(key: string, initial: T) {
-  const [value, setValue] = useState<T>(initial);
-
-  // Load on mount
-  useEffect(() => {
+  // Initialize synchronously from sessionStorage to avoid a transient default value
+  // that can cause downstream effects (e.g., SWR keys changing and triggering refetches).
+  const [value, setValue] = useState<T>(() => {
     try {
       const raw = sessionStorage.getItem(key);
       if (raw != null) {
-        setValue(JSON.parse(raw) as T);
+        return JSON.parse(raw) as T;
       }
     } catch {
       // ignore
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+    return initial;
+  });
+
+  // Note: we intentionally do not "load on mount" anymore because we already read synchronously.
+  // Keeping an effect here would briefly override the initial value and can cause key churn.
 
   // Save on change
   useEffect(() => {
