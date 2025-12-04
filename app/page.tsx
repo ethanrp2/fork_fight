@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import useSWR from 'swr';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { mutate as swrMutate } from 'swr';
 import type {
   ApiResponse,
   MatchupResponse,
@@ -15,6 +16,8 @@ import { getRestaurantImagePath } from '@/lib/image';
 import { haversineMiles, parseLatLngFromMapsUrl, useUserLocation } from '@/lib/geo';
 import { useStickyState } from '../lib/stickyState';
 import { useSurveyState } from '@/lib/surveyState';
+import { useAuthUser } from '@/lib/auth';
+import RequireAuth from '@/components/RequireAuth';
 
 type CardSide = 'A' | 'B';
 
@@ -25,6 +28,7 @@ export default function Home() {
   const prefersReducedMotion = usePrefersReducedMotion();
   const { coords, requestLocation, clearLocation } = useUserLocation();
 	const { snapshot, setSnapshot, clearSnapshot, prevSnapshot, setPrevSnapshot, clearPrevSnapshot, isExpired } = useSurveyState();
+	const { user } = useAuthUser();
 
   const fallbackData: ApiResponse<MatchupResponse> | undefined = useMemo(() => {
     if (!snapshot || isExpired) return undefined;
@@ -77,7 +81,7 @@ export default function Home() {
 
   const handleVote = useCallback(
     async (winner: Restaurant, loser: Restaurant) => {
-      if (!matchup) return;
+      if (!matchup || !user?.id) return;
       const res = await fetch('/api/vote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -86,18 +90,27 @@ export default function Home() {
           winnerId: winner.id,
           loserId: loser.id,
           category,
+          userId: user?.id,
         }),
       });
       const json: ApiResponse<VoteResponse> = await res.json();
       if (json.ok) {
         setLastVoteId(json.data!.voteId);
-        await mutate(); // get next matchup
+        // Trigger fetching a new matchup
+        setRefreshIndex((n: number) => n + 1);
+        // Refresh personal rankings immediately after a successful vote
+        const uid = user?.id;
+        if (uid) {
+          (['global','value','aesthetics','speed'] as const).forEach((c) => {
+            swrMutate(['personal-rankings', uid, c], undefined, { revalidate: true });
+          });
+        }
       } else {
         console.error('Vote error:', json.error);
         alert(json.error ?? 'Vote failed');
       }
     },
-    [category, matchup, mutate]
+    [category, matchup, user, mutate]
   );
 
   const handleSkip = useCallback(async () => {
@@ -144,6 +157,7 @@ export default function Home() {
   );
 
   return (
+    <RequireAuth>
     <div className="flex flex-col h-[calc(100svh-80px-env(safe-area-inset-top))] min-h-0">
       <div className="pt-6 shrink-0">
         <LogoHeader />
@@ -221,6 +235,7 @@ export default function Home() {
         />
       ) : null}
     </div>
+    </RequireAuth>
   );
 }
 

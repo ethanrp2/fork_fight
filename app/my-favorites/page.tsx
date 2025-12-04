@@ -1,33 +1,45 @@
 'use client';
 
 import Image from 'next/image';
-import { useState, useRef } from 'react';
+import Link from 'next/link';
+import useSWR from 'swr';
+import { useState, useRef, useMemo } from 'react';
 import type { SortableCategory } from '@/types/restaurant';
-import { SORTABLE_CATEGORIES } from '@/types/restaurant';
-
-// Mock data for UI-only implementation
-const mockRestaurants = [
-  { id: '1', name: 'Bangkok Thai', rank: 1, distanceMiles: 0.5, mapsUrl: 'https://maps.google.com' },
-  { id: '2', name: 'Papa Del\'s Pizza', rank: 2, distanceMiles: 0.8, mapsUrl: 'https://maps.google.com' },
-  { id: '3', name: 'Maize Mexican Grill', rank: 3, distanceMiles: 1.2, mapsUrl: 'https://maps.google.com' },
-  { id: '4', name: 'Chipotle', rank: 4, distanceMiles: 0.9, mapsUrl: 'https://maps.google.com' },
-  { id: '5', name: 'Sakanaya', rank: 5, distanceMiles: 1.5, mapsUrl: 'https://maps.google.com' },
-  { id: '6', name: 'Black Dog', rank: 6, distanceMiles: 0.7, mapsUrl: 'https://maps.google.com' },
-  { id: '7', name: 'Panda Express', rank: 7, distanceMiles: 1.1, mapsUrl: 'https://maps.google.com' },
-  { id: '8', name: 'Subway', rank: 8, distanceMiles: 0.6, mapsUrl: 'https://maps.google.com' },
-  { id: '9', name: 'Jimmy John\'s', rank: 9, distanceMiles: 1.0, mapsUrl: 'https://maps.google.com' },
-  { id: '10', name: 'Potbelly', rank: 10, distanceMiles: 1.3, mapsUrl: 'https://maps.google.com' },
-  { id: '11', name: 'Noodles & Company', rank: 11, distanceMiles: 0.4, mapsUrl: 'https://maps.google.com' },
-  { id: '12', name: 'Starbucks', rank: 12, distanceMiles: 0.3, mapsUrl: 'https://maps.google.com' },
-  { id: '13', name: 'Dunkin\'', rank: 13, distanceMiles: 1.4, mapsUrl: 'https://maps.google.com' },
-  { id: '14', name: 'McDonald\'s', rank: 14, distanceMiles: 0.9, mapsUrl: 'https://maps.google.com' },
-  { id: '15', name: 'Taco Bell', rank: 15, distanceMiles: 1.6, mapsUrl: 'https://maps.google.com' },
-];
+import type { ApiResponse, RankingsResponse, RankingEntry } from '@/types/api';
+import { useAuthUser } from '@/lib/auth';
+import RequireAuth from '@/components/RequireAuth';
+import { haversineMiles, parseLatLngFromMapsUrl, useUserLocation } from '@/lib/geo';
 
 export default function MyFavoritesPage() {
   const [category, setCategory] = useState<SortableCategory>('global');
+  const { user, loading } = useAuthUser();
+  const { coords, requestLocation, clearLocation } = useUserLocation();
+
+  const { data, isLoading } = useSWR(
+    user ? ['personal-rankings', user.id, category] as const : null,
+    async ([, userId, cat]) => {
+      const res = await fetch('/api/restaurants/personal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, category: cat }),
+      });
+      const json: ApiResponse<RankingsResponse> = await res.json();
+      if (!json.ok) {
+        throw new Error(json.error ?? 'Failed to load personal rankings');
+      }
+      return json.data!;
+    },
+    {
+      revalidateOnFocus: true,
+      revalidateOnReconnect: true,
+      revalidateOnMount: true,
+    }
+  );
+
+  const rankings = data?.rankings ?? [];
 
   return (
+    <RequireAuth>
     <div className="flex flex-col h-[calc(100svh-80px-env(safe-area-inset-top))] min-h-0 bg-white">
       {/* Fixed Header */}
       <div className="shrink-0 pt-6 pb-4 bg-white relative">
@@ -55,6 +67,29 @@ export default function MyFavoritesPage() {
               <span className="pointer-events-none absolute right-2 top-1 text-white">⌄</span>
             </div>
           </div>
+          {!coords ? (
+            <button
+              className="px-3 h-[26px] rounded-[10px] bg-[#741B3F] text-white text-[14px]"
+              onClick={() => requestLocation()}
+            >
+              Use my location
+            </button>
+          ) : (
+            <div className="inline-flex gap-2">
+              <button
+                className="px-3 h-[26px] rounded-[10px] bg-[#741B3F] text-white text-[14px]"
+                onClick={() => requestLocation()}
+              >
+                Update location
+              </button>
+              <button
+                className="px-3 h-[26px] rounded-[10px] bg-[#f1e6ea] text-[#222222] text-[14px]"
+                onClick={() => clearLocation()}
+              >
+                Clear
+              </button>
+            </div>
+          )}
           <button
             className="h-[36px] w-[32px] relative shrink-0"
             aria-label="Share"
@@ -70,15 +105,32 @@ export default function MyFavoritesPage() {
         </div>
       </div>
 
-      {/* Scrollable Restaurant Cards */}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto min-h-0">
         <div className="flex flex-col gap-[17px] pb-4">
-          {mockRestaurants.map((restaurant) => (
-            <RankingRow key={restaurant.id} restaurant={restaurant} />
-          ))}
+          {loading ? (
+            <p className="px-2 text-zinc-600">Loading…</p>
+          ) : !user ? (
+            <div className="px-2">
+              <p className="text-zinc-800">Sign in to see your personal rankings.</p>
+              <div className="mt-3 flex gap-2">
+                <Link className="px-4 py-2 rounded-lg bg-[#741B3F] text-white" href="/login">Login</Link>
+                <Link className="px-4 py-2 rounded-lg border border-[#741B3F] text-[#741B3F]" href="/register">Register</Link>
+              </div>
+            </div>
+          ) : isLoading ? (
+            <p className="px-2 text-zinc-600">Loading your rankings…</p>
+          ) : rankings.length === 0 ? (
+            <p className="px-2 text-zinc-800">No votes yet. Start ranking to build your list!</p>
+          ) : (
+            rankings.map((restaurant) => (
+              <RankingRow key={restaurant.id} restaurant={restaurant} userCoords={coords} />
+            ))
+          )}
         </div>
       </div>
     </div>
+    </RequireAuth>
   );
 }
 
@@ -86,11 +138,20 @@ export default function MyFavoritesPage() {
 // Components
 // -----------------------------------------------------------------------------
 
-function RankingRow({ restaurant }: { restaurant: typeof mockRestaurants[number] }) {
+function RankingRow({ restaurant, userCoords }: { restaurant: RankingEntry; userCoords: { lat: number; lng: number } | null }) {
   const rankBg = restaurant.rank <= 3 ? '#741B3F' : '#C87F9C';
   const longPressTimer = useRef<number | null>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
   const hasLongPressed = useRef(false);
+  const dynamicMiles = useMemo(() => {
+    if (userCoords && restaurant.mapsUrl) {
+      const ll = parseLatLngFromMapsUrl(restaurant.mapsUrl);
+      if (ll) {
+        return haversineMiles(userCoords, ll);
+      }
+    }
+    return restaurant.distanceMiles;
+  }, [userCoords, restaurant]);
 
   const handlePointerDown = (e: React.PointerEvent) => {
     (e.target as Element).setPointerCapture?.(e.pointerId);
@@ -129,7 +190,7 @@ function RankingRow({ restaurant }: { restaurant: typeof mockRestaurants[number]
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
       role="group"
-      aria-label={`${restaurant.name}, ${formatDistance(restaurant.distanceMiles)}`}
+      aria-label={`${restaurant.name}, ${formatDistance(dynamicMiles)}`}
     >
       <div
         className="h-[66px] w-[71px] rounded-[15px] flex items-center justify-center shrink-0"
@@ -146,7 +207,7 @@ function RankingRow({ restaurant }: { restaurant: typeof mockRestaurants[number]
               {restaurant.name}
             </p>
             <p className="text-[#222222] text-[16px] font-normal leading-none mt-1">
-              {formatDistance(restaurant.distanceMiles)}
+              {formatDistance(dynamicMiles)}
             </p>
           </div>
           {restaurant.mapsUrl ? (

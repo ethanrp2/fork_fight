@@ -162,3 +162,27 @@ export async function markVoteUndone(voteId: string): Promise<void> {
     throw new Error(`Failed to mark vote as undone: ${error.message}`);
   }
 }
+
+/**
+ * Get all non-undone votes for a user ordered by creation time ascending.
+ */
+export async function getVotesByUser(userId: string): Promise<VoteWithDeltas[]> {
+  const supabase = getSupabaseAdmin();
+
+  if (!supabase) {
+    throw new Error('Supabase not configured');
+  }
+
+  const { data, error } = await supabase
+    .from('votes')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('undone', false)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to fetch user votes: ${error.message}`);
+  }
+
+  return (data ?? []).map(rowToVoteWithDeltas);
+}
