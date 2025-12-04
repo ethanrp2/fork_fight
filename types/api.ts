@@ -136,6 +136,12 @@ export interface RankingEntry {
   /** Distance in miles */
   readonly distanceMiles: number;
 
+  /** Latitude (optional, for client-side distance calculation) */
+  readonly lat?: number;
+
+  /** Longitude (optional, for client-side distance calculation) */
+  readonly lng?: number;
+
   /** Image slug for constructing image path */
   readonly imageSlug: string;
 

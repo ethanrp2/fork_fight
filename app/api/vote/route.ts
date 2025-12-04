@@ -20,8 +20,8 @@ export async function POST(
     const body: VoteRequest = await request.json();
     const { matchupId, winnerId, loserId, category } = body;
 
-    // Dev fallback: provide a default userId if none supplied
-    const userId = (body as any).userId ?? 'dev-user';
+    // Require authenticated userId (no dev fallback)
+    const userId = (body as any).userId;
 
     // Validate required fields
     if (!matchupId || !winnerId || !loserId || !category) {
@@ -47,6 +47,17 @@ export async function POST(
 
     // Validate winner !== loser
     if (winnerId === loserId) {
+    // Validate userId present
+    if (!userId || typeof userId !== 'string') {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Missing or invalid userId',
+        },
+        { status: 401 }
+      );
+    }
+
       return NextResponse.json(
         {
           ok: false,

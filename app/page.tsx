@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import useSWR from 'swr';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { mutate as swrMutate } from 'swr';
 import type {
   ApiResponse,
   MatchupResponse,
@@ -15,6 +16,8 @@ import { getRestaurantImagePath } from '@/lib/image';
 import { haversineMiles, parseLatLngFromMapsUrl, useUserLocation } from '@/lib/geo';
 import { useStickyState } from '../lib/stickyState';
 import { useSurveyState } from '@/lib/surveyState';
+import { useAuthUser } from '@/lib/auth';
+import RequireAuth from '@/components/RequireAuth';
 
 type CardSide = 'A' | 'B';
 
@@ -25,6 +28,9 @@ export default function Home() {
   const prefersReducedMotion = usePrefersReducedMotion();
   const { coords, requestLocation, clearLocation } = useUserLocation();
 	const { snapshot, setSnapshot, clearSnapshot, prevSnapshot, setPrevSnapshot, clearPrevSnapshot, isExpired } = useSurveyState();
+	const { user } = useAuthUser();
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
   const fallbackData: ApiResponse<MatchupResponse> | undefined = useMemo(() => {
     if (!snapshot || isExpired) return undefined;
@@ -77,7 +83,7 @@ export default function Home() {
 
   const handleVote = useCallback(
     async (winner: Restaurant, loser: Restaurant) => {
-      if (!matchup) return;
+      if (!matchup || !user?.id) return;
       const res = await fetch('/api/vote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -86,18 +92,41 @@ export default function Home() {
           winnerId: winner.id,
           loserId: loser.id,
           category,
+          userId: user?.id,
         }),
       });
       const json: ApiResponse<VoteResponse> = await res.json();
       if (json.ok) {
         setLastVoteId(json.data!.voteId);
-        await mutate(); // get next matchup
+        // Show category-specific toast
+        const name = winner.name;
+        const msg =
+          category === 'value'
+            ? `${name} just earned a value boost`
+            : category === 'aesthetics'
+            ? `${name} gets a glow up`
+            : `${name} just leveled up in speed`;
+        setToastMessage(msg);
+        if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = window.setTimeout(() => {
+          setToastMessage(null);
+          toastTimerRef.current = null;
+        }, 1400);
+        // Trigger fetching a new matchup
+        setRefreshIndex((n: number) => n + 1);
+        // Refresh personal rankings immediately after a successful vote
+        const uid = user?.id;
+        if (uid) {
+          (['global','value','aesthetics','speed'] as const).forEach((c) => {
+            swrMutate(['personal-rankings', uid, c], undefined, { revalidate: true });
+          });
+        }
       } else {
         console.error('Vote error:', json.error);
         alert(json.error ?? 'Vote failed');
       }
     },
-    [category, matchup, mutate]
+    [category, matchup, user, mutate]
   );
 
   const handleSkip = useCallback(async () => {
@@ -144,6 +173,7 @@ export default function Home() {
   );
 
   return (
+    <RequireAuth>
     <div className="flex flex-col h-[calc(100svh-80px-env(safe-area-inset-top))] min-h-0">
       <div className="pt-6 shrink-0">
         <LogoHeader />
@@ -220,7 +250,18 @@ export default function Home() {
           onClose={() => setSheetRestaurant(null)}
         />
       ) : null}
+
+      {toastMessage ? (
+        <div
+          className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 px-4 py-2 rounded-full bg-black/80 text-white text-sm pointer-events-none"
+          role="status"
+          aria-live="polite"
+        >
+          {toastMessage}
+        </div>
+      ) : null}
     </div>
+    </RequireAuth>
   );
 }
 
@@ -311,6 +352,7 @@ function SwipeableCard(props: {
   const { restaurant, onVote, onLongPress, prefersReducedMotion } = props;
   const startX = useRef<number | null>(null);
   const lastX = useRef<number>(0);
+  const startY = useRef<number | null>(null);
   const [dx, setDx] = useState(0);
   const [dragging, setDragging] = useState(false);
   const longPressTimer = useRef<number | null>(null);
@@ -319,6 +361,7 @@ function SwipeableCard(props: {
   const handlePointerDown = (e: React.PointerEvent) => {
     (e.target as Element).setPointerCapture?.(e.pointerId);
     startX.current = e.clientX;
+    startY.current = e.clientY;
     lastX.current = e.clientX;
     setDragging(true);
     hasLongPressed.current = false;
@@ -349,6 +392,13 @@ function SwipeableCard(props: {
     }
     const threshold = 80;
     if (!hasLongPressed.current && Math.abs(dx) > threshold) {
+      onVote();
+      setDx(0);
+      return;
+    }
+    // Short tap to vote (no long press and minimal horizontal movement)
+    const tapTolerance = 8;
+    if (!hasLongPressed.current && Math.abs(dx) <= tapTolerance) {
       onVote();
       setDx(0);
       return;
