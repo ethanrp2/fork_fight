@@ -29,8 +29,8 @@ export default function Home() {
   const { coords, requestLocation, clearLocation } = useUserLocation();
 	const { snapshot, setSnapshot, clearSnapshot, prevSnapshot, setPrevSnapshot, clearPrevSnapshot, isExpired } = useSurveyState();
 	const { user } = useAuthUser();
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const toastTimerRef = useRef<number | null>(null);
+  const [selectedCard, setSelectedCard] = useState<CardSide | null>(null);
+  const overlayTimerRef = useRef<number | null>(null);
 
   const fallbackData: ApiResponse<MatchupResponse> | undefined = useMemo(() => {
     if (!snapshot || isExpired) return undefined;
@@ -61,6 +61,13 @@ export default function Home() {
   useEffect(() => {
     if (matchup && restaurantA && restaurantB) {
       if (!snapshot || snapshot.matchup.id !== matchup.id) {
+        // Clear overlay when new matchup loads
+        setSelectedCard(null);
+        if (overlayTimerRef.current) {
+          window.clearTimeout(overlayTimerRef.current);
+          overlayTimerRef.current = null;
+        }
+
 				// rotate previous snapshot for undo
 				if (snapshot) {
 					setPrevSnapshot(snapshot);
@@ -82,8 +89,13 @@ export default function Home() {
   }, []);
 
   const handleVote = useCallback(
-    async (winner: Restaurant, loser: Restaurant) => {
+    async (winner: Restaurant, loser: Restaurant, side: CardSide) => {
       if (!matchup || !user?.id) return;
+
+      // Set overlay immediately (optimistic UI)
+      setSelectedCard(side);
+
+      // Submit vote to server
       const res = await fetch('/api/vote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -98,22 +110,15 @@ export default function Home() {
       const json: ApiResponse<VoteResponse> = await res.json();
       if (json.ok) {
         setLastVoteId(json.data!.voteId);
-        // Show category-specific toast
-        const name = winner.name;
-        const msg =
-          category === 'value'
-            ? `${name} just earned a value boost`
-            : category === 'aesthetics'
-            ? `${name} gets a glow up`
-            : `${name} just leveled up in speed`;
-        setToastMessage(msg);
-        if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-        toastTimerRef.current = window.setTimeout(() => {
-          setToastMessage(null);
-          toastTimerRef.current = null;
-        }, 1400);
-        // Trigger fetching a new matchup
-        setRefreshIndex((n: number) => n + 1);
+
+        // Delay fetching new matchup by 1.4 seconds
+        // Overlay will clear when new matchup loads (via useEffect at lines 64-69)
+        if (overlayTimerRef.current) window.clearTimeout(overlayTimerRef.current);
+        overlayTimerRef.current = window.setTimeout(() => {
+          setRefreshIndex((n: number) => n + 1);
+          overlayTimerRef.current = null;
+        }, 600);
+
         // Refresh personal rankings immediately after a successful vote
         const uid = user?.id;
         if (uid) {
@@ -124,6 +129,12 @@ export default function Home() {
       } else {
         console.error('Vote error:', json.error);
         alert(json.error ?? 'Vote failed');
+        // Clear overlay on error
+        setSelectedCard(null);
+        if (overlayTimerRef.current) {
+          window.clearTimeout(overlayTimerRef.current);
+          overlayTimerRef.current = null;
+        }
       }
     },
     [category, matchup, user, mutate]
@@ -209,13 +220,21 @@ export default function Home() {
           <div className="flex flex-col gap-5 flex-1 min-h-0">
             <SwipeableCard
               restaurant={restaurantA}
-              onVote={() => handleVote(restaurantA, restaurantB)}
+              otherRestaurant={restaurantB}
+              side="A"
+              isSelected={selectedCard === 'A'}
+              category={category}
+              onVote={() => handleVote(restaurantA, restaurantB, 'A')}
               onLongPress={() => setSheetRestaurant(restaurantA)}
               prefersReducedMotion={prefersReducedMotion}
             />
             <SwipeableCard
               restaurant={restaurantB}
-              onVote={() => handleVote(restaurantB, restaurantA)}
+              otherRestaurant={restaurantA}
+              side="B"
+              isSelected={selectedCard === 'B'}
+              category={category}
+              onVote={() => handleVote(restaurantB, restaurantA, 'B')}
               onLongPress={() => setSheetRestaurant(restaurantB)}
               prefersReducedMotion={prefersReducedMotion}
             />
@@ -249,16 +268,6 @@ export default function Home() {
           restaurant={sheetRestaurant}
           onClose={() => setSheetRestaurant(null)}
         />
-      ) : null}
-
-      {toastMessage ? (
-        <div
-          className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 px-4 py-2 rounded-full bg-black/80 text-white text-sm pointer-events-none"
-          role="status"
-          aria-live="polite"
-        >
-          {toastMessage}
-        </div>
       ) : null}
     </div>
     </RequireAuth>
@@ -345,11 +354,15 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
 
 function SwipeableCard(props: {
   restaurant: Restaurant;
+  otherRestaurant: Restaurant;
+  side: CardSide;
+  isSelected: boolean;
+  category: VotableCategory;
   onVote: () => void;
   onLongPress: () => void;
   prefersReducedMotion: boolean;
 }) {
-  const { restaurant, onVote, onLongPress, prefersReducedMotion } = props;
+  const { restaurant, otherRestaurant, side, isSelected, category, onVote, onLongPress, prefersReducedMotion } = props;
   const startX = useRef<number | null>(null);
   const lastX = useRef<number>(0);
   const startY = useRef<number | null>(null);
@@ -448,6 +461,34 @@ function SwipeableCard(props: {
         priority={false}
       />
       <div className="absolute inset-0 bg-black/20" />
+
+      {/* Selection overlay with ELO comparison */}
+      {isSelected && (() => {
+        const { isWinning, comparison } = getEloComparison(
+          restaurant,
+          otherRestaurant,
+          category
+        );
+        return (
+          <div
+            className={[
+              'absolute inset-0 flex flex-col items-center justify-center',
+              isWinning ? 'bg-green-500/60' : 'bg-red-500/60',
+            ].join(' ')}
+            role="status"
+            aria-live="polite"
+            aria-label={`Selected. ELO comparison: ${comparison}. ${isWinning ? 'Higher ELO' : 'Lower ELO'}`}
+          >
+            <p className="text-white font-bold text-[36px] leading-none">
+              {comparison}
+            </p>
+            <p className="text-white text-[18px] font-normal mt-2">
+              {isWinning ? 'Higher ELO!' : 'Lower ELO'}
+            </p>
+          </div>
+        );
+      })()}
+
       <div className="absolute left-3 bottom-12 right-3">
         <p className="text-white font-bold text-[25px] leading-none truncate">
           {restaurant.name}
@@ -546,6 +587,26 @@ function capitalize(s: string) {
 function formatDistance(miles?: number) {
   if (!miles && miles !== 0) return '—';
   return `${miles.toFixed(1)} mi away`;
+}
+
+function getEloComparison(
+  selected: Restaurant,
+  other: Restaurant,
+  category: VotableCategory
+): { isWinning: boolean; comparison: string; selectedElo: number; otherElo: number } {
+  // Map category to ELO field
+  const categoryKey = `elo${category.charAt(0).toUpperCase()}${category.slice(1)}` as
+    'eloValue' | 'eloAesthetics' | 'eloSpeed';
+
+  const selectedElo = selected[categoryKey];
+  const otherElo = other[categoryKey];
+
+  return {
+    isWinning: selectedElo > otherElo,
+    comparison: `${selectedElo.toFixed(0)} vs ${otherElo.toFixed(0)}`,
+    selectedElo,
+    otherElo,
+  };
 }
 
 function usePrefersReducedMotion(): boolean {
