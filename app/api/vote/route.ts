@@ -18,10 +18,13 @@ export async function POST(
   try {
     // Parse request body
     const body: VoteRequest = await request.json();
-    const { matchupId, winnerId, loserId, category } = body;
-
-    // Require authenticated userId (no dev fallback)
-    const userId = (body as any).userId;
+    const { matchupId, winnerId, loserId, category, userId } = body as {
+      matchupId?: string;
+      winnerId?: string;
+      loserId?: string;
+      category?: VotableCategory;
+      userId?: string;
+    };
 
     // Validate required fields
     if (!matchupId || !winnerId || !loserId || !category) {
@@ -45,19 +48,19 @@ export async function POST(
       );
     }
 
-    // Validate winner !== loser
-    if (winnerId === loserId) {
-    // Validate userId present
-    if (!userId || typeof userId !== 'string') {
+    // Validate userId format if provided
+    if (userId !== undefined && typeof userId !== 'string') {
       return NextResponse.json(
         {
           ok: false,
-          error: 'Missing or invalid userId',
+          error: 'Invalid userId format',
         },
-        { status: 401 }
+        { status: 400 }
       );
     }
 
+    // Validate winner !== loser
+    if (winnerId === loserId) {
       return NextResponse.json(
         {
           ok: false,
@@ -80,7 +83,7 @@ export async function POST(
     return NextResponse.json({
       ok: true,
       data: {
-        voteId: result.voteId,
+        voteId: result.voteId ?? null,
         winner: result.winner,
         loser: result.loser,
       },

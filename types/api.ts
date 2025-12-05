@@ -77,8 +77,8 @@ export interface VoteRequest {
  * Response from POST /api/vote
  */
 export interface VoteResponse {
-  /** Unique vote ID for undo operations */
-  readonly voteId: string;
+  /** Unique vote ID for undo operations (null for anonymous votes) */
+  readonly voteId: string | null;
 
   /** Updated winner restaurant */
   readonly winner: Restaurant;

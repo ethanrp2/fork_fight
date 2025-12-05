@@ -7,7 +7,6 @@ import type { ApiResponse, RankingsResponse } from '@/types/api';
 import type { SortableCategory } from '@/types/restaurant';
 import { SORTABLE_CATEGORIES, VOTABLE_CATEGORIES } from '@/types/restaurant';
 import { haversineMiles, parseLatLngFromMapsUrl, useUserLocation } from '@/lib/geo';
-import RequireAuth from '@/components/RequireAuth';
 
 export default function FavoritesPage() {
   const [category, setCategory] = useState<SortableCategory>('global');
@@ -44,7 +43,6 @@ export default function FavoritesPage() {
   const rankings = data?.data?.rankings ?? [];
 
   return (
-    <RequireAuth>
     <div className="flex flex-col h-[calc(100svh-80px-env(safe-area-inset-top))] min-h-0 bg-white">
       {/* Fixed Header */}
       <div className="shrink-0 pt-6 pb-4 bg-white">
@@ -122,7 +120,6 @@ export default function FavoritesPage() {
         onClose={() => setSheetEntry(null)}
       />
     </div>
-    </RequireAuth>
   );
 }
 

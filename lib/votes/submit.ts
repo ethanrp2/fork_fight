@@ -26,7 +26,7 @@ export interface SubmitVoteInput {
  * Result of submitting a vote.
  */
 export interface SubmitVoteResult {
-  readonly voteId: string;
+  readonly voteId: string | null;
   readonly winner: Restaurant;
   readonly loser: Restaurant;
 }
@@ -131,17 +131,20 @@ export async function submitVote(
 
   await updateRestaurantRatings(updates);
 
-  // Store vote with all 4 deltas (global + category for winner/loser)
-  const voteId = await storeVote(
-    winnerId,
-    loserId,
-    category,
-    deltaGlobalWinner,
-    deltaGlobalLoser,
-    deltaCatWinner,
-    deltaCatLoser,
-    userId
-  );
+  // Store vote with all 4 deltas (only for authenticated users)
+  let voteId: string | null = null;
+  if (userId) {
+    voteId = await storeVote(
+      winnerId,
+      loserId,
+      category,
+      deltaGlobalWinner,
+      deltaGlobalLoser,
+      deltaCatWinner,
+      deltaCatLoser,
+      userId
+    );
+  }
 
   return {
     voteId,

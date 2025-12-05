@@ -17,7 +17,6 @@ import { haversineMiles, parseLatLngFromMapsUrl, useUserLocation } from '@/lib/g
 import { useStickyState } from '../lib/stickyState';
 import { useSurveyState } from '@/lib/surveyState';
 import { useAuthUser } from '@/lib/auth';
-import RequireAuth from '@/components/RequireAuth';
 
 type CardSide = 'A' | 'B';
 
@@ -90,12 +89,12 @@ export default function Home() {
 
   const handleVote = useCallback(
     async (winner: Restaurant, loser: Restaurant, side: CardSide) => {
-      if (!matchup || !user?.id) return;
+      if (!matchup) return;
 
       // Set overlay immediately (optimistic UI)
       setSelectedCard(side);
 
-      // Submit vote to server
+      // Submit vote to server (userId is optional)
       const res = await fetch('/api/vote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -104,7 +103,7 @@ export default function Home() {
           winnerId: winner.id,
           loserId: loser.id,
           category,
-          userId: user?.id,
+          ...(user?.id && { userId: user.id }),
         }),
       });
       const json: ApiResponse<VoteResponse> = await res.json();
@@ -184,7 +183,6 @@ export default function Home() {
   );
 
   return (
-    <RequireAuth>
     <div className="flex flex-col h-[calc(100svh-80px-env(safe-area-inset-top))] min-h-0">
       <div className="pt-6 shrink-0">
         <LogoHeader />
@@ -270,7 +268,6 @@ export default function Home() {
         />
       ) : null}
     </div>
-    </RequireAuth>
   );
 }
 
