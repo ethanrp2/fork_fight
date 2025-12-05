@@ -7,6 +7,8 @@ import { mutate as swrMutate } from 'swr';
 import type {
   ApiResponse,
   MatchupResponse,
+  RankingsResponse,
+  RankingEntry,
   UndoResponse,
   VoteResponse,
 } from '@/types/api';
@@ -190,13 +192,13 @@ export default function Home() {
 
       <div className="mt-3 shrink-0">
         <p className="text-[#222222] text-[16px] font-normal">Currently Ranking Based On:</p>
-        <div className="flex items-center gap-2 mt-2">
+        <div className="flex flex-wrap items-center gap-2 mt-2 min-w-0">
           <CategorySelector
             value={category}
             onChange={onCategoryChange}
           />
           <button
-            className="px-3 h-[26px] rounded-[10px] bg-[#741B3F] text-white text-[14px] shrink-0"
+            className="px-3 h-[34px] rounded-[10px] bg-[#741B3F] text-white text-[16px] shrink-0 whitespace-nowrap"
             onClick={() => coords ? clearLocation() : requestLocation()}
           >
             {coords ? 'Disable Location' : 'Use my location'}
@@ -294,14 +296,14 @@ function CategorySelector(props: {
   onChange: (c: VotableCategory) => void;
 }) {
   return (
-    <div className="mt-2 inline-flex rounded-[10px] bg-[#f1e6ea] p-1">
+    <div className="flex flex-1 min-w-[220px] rounded-[10px] bg-[#f1e6ea] p-1">
       {VOTABLE_CATEGORIES.map((cat) => {
         const selected = props.value === cat;
         return (
           <button
             key={cat}
             className={[
-              'px-4 h-[26px] min-w-[90px] rounded-[10px] text-[16px] transition-colors',
+              'flex-1 min-w-0 px-3 h-[26px] rounded-[10px] text-[16px] transition-colors',
               selected ? 'bg-[#741B3F] text-white' : 'text-[#222222]',
             ].join(' ')}
             aria-pressed={selected}
@@ -367,6 +369,16 @@ function SwipeableCard(props: {
   const [dragging, setDragging] = useState(false);
   const longPressTimer = useRef<number | null>(null);
   const hasLongPressed = useRef(false);
+
+  // Fetch rankings for the current category with caching
+  const { data: rankingsData } = useSWR<ApiResponse<RankingsResponse>>(
+    ['rankings', category] as const,
+    fetchRankings,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+    }
+  );
 
   const handlePointerDown = (e: React.PointerEvent) => {
     (e.target as Element).setPointerCapture?.(e.pointerId);
@@ -459,28 +471,46 @@ function SwipeableCard(props: {
       />
       <div className="absolute inset-0 bg-black/20" />
 
-      {/* Selection overlay with ELO comparison */}
+      {/* Selection overlay with rank comparison */}
       {isSelected && (() => {
-        const { isWinning, comparison } = getEloComparison(
+        const rankings = rankingsData?.data?.rankings;
+        const comparison = getRankComparison(
           restaurant,
           otherRestaurant,
-          category
+          rankings
         );
+        
+        // If rankings not loaded yet, show loading state
+        if (!comparison) {
+          return (
+            <div
+              className="absolute inset-0 flex flex-col items-center justify-center bg-gray-500/60"
+              role="status"
+              aria-live="polite"
+              aria-label="Loading rank comparison"
+            >
+              <p className="text-white font-bold text-[36px] leading-none">
+                ...
+              </p>
+            </div>
+          );
+        }
+
         return (
           <div
             className={[
               'absolute inset-0 flex flex-col items-center justify-center',
-              isWinning ? 'bg-green-500/60' : 'bg-red-500/60',
+              comparison.isWinning ? 'bg-green-500/60' : 'bg-red-500/60',
             ].join(' ')}
             role="status"
             aria-live="polite"
-            aria-label={`Selected. ELO comparison: ${comparison}. ${isWinning ? 'Higher ELO' : 'Lower ELO'}`}
+            aria-label={`Selected. Rank comparison: ${comparison.comparison}. ${comparison.isWinning ? 'Higher Rank' : 'Lower Rank'}`}
           >
             <p className="text-white font-bold text-[36px] leading-none">
-              {comparison}
+              {comparison.comparison}
             </p>
             <p className="text-white text-[18px] font-normal mt-2">
-              {isWinning ? 'Higher ELO!' : 'Lower ELO'}
+              {comparison.isWinning ? 'Higher Rank!' : 'Lower Rank'}
             </p>
           </div>
         );
@@ -586,23 +616,46 @@ function formatDistance(miles?: number) {
   return `${miles.toFixed(1)} mi away`;
 }
 
-function getEloComparison(
+function getRankComparison(
   selected: Restaurant,
   other: Restaurant,
-  category: VotableCategory
-): { isWinning: boolean; comparison: string; selectedElo: number; otherElo: number } {
-  // Map category to ELO field
-  const categoryKey = `elo${category.charAt(0).toUpperCase()}${category.slice(1)}` as
-    'eloValue' | 'eloAesthetics' | 'eloSpeed';
+  rankings: readonly RankingEntry[] | undefined
+): { isWinning: boolean; comparison: string; selectedRank: number | null; otherRank: number | null } | null {
+  // If rankings not loaded, return null
+  if (!rankings || rankings.length === 0) {
+    return null;
+  }
 
-  const selectedElo = selected[categoryKey];
-  const otherElo = other[categoryKey];
+  // Find ranks by restaurant ID
+  const selectedEntry = rankings.find(r => r.id === selected.id);
+  const otherEntry = rankings.find(r => r.id === other.id);
+
+  // If either restaurant not found in rankings, return null
+  if (!selectedEntry || !otherEntry) {
+    return null;
+  }
+
+  const selectedRank = selectedEntry.rank;
+  const otherRank = otherEntry.rank;
+
+  // Lower rank number = better (rank 1 is best)
+  const isWinning = selectedRank < otherRank;
+
+  // Create visual comparison with > or < sign
+  let comparison: string;
+  if (selectedRank < otherRank) {
+    comparison = `#${selectedRank} > #${otherRank}`;
+  } else if (selectedRank > otherRank) {
+    comparison = `#${selectedRank} < #${otherRank}`;
+  } else {
+    comparison = `#${selectedRank} = #${otherRank}`;
+  }
 
   return {
-    isWinning: selectedElo > otherElo,
-    comparison: `${selectedElo.toFixed(0)} vs ${otherElo.toFixed(0)}`,
-    selectedElo,
-    otherElo,
+    isWinning,
+    comparison,
+    selectedRank,
+    otherRank,
   };
 }
 
@@ -646,6 +699,15 @@ async function fetchMatchup([_key, _refreshIndex]: readonly [string, number]) {
   const json: ApiResponse<MatchupResponse> = await res.json();
   if (!json.ok) {
     throw new Error(json.error ?? 'Failed to load matchup');
+  }
+  return json;
+}
+
+async function fetchRankings([_key, category]: readonly [string, VotableCategory]) {
+  const res = await fetch(`/api/restaurants?category=${category}`, { cache: 'no-store' });
+  const json: ApiResponse<RankingsResponse> = await res.json();
+  if (!json.ok) {
+    throw new Error(json.error ?? 'Failed to load rankings');
   }
   return json;
 }
